@@ -1,30 +1,30 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitpulse_mobile/main.dart';
+import 'package:fitpulse_mobile/state/app_state.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('La app arranca y muestra la marca FitPulse', (WidgetTester tester) async {
+    await tester.pumpWidget(FitPulseApp(state: AppState()));
+    await tester.pump(const Duration(milliseconds: 1800));
+    expect(find.text('Tu actividad, en cada latido'), findsOneWidget);
+    await tester.pumpAndSettle(const Duration(seconds: 3));
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('El estado simulado actualiza metas al guardar una sesión', () {
+    final app = AppState();
+    final before = app.todaySteps;
+    final s = app.buildSession(
+      type: app.sessions.first.type,
+      seconds: 1200,
+      km: 3.2,
+      hr: const [120, 130, 140, 150, 145, 150, 155, 150],
+      kcal: 210,
+      steps: 3000,
+    );
+    app.addSession(s);
+    expect(app.todaySteps, before + 3000);
+    expect(app.sessions.first.id, s.id);
+    expect(app.unreadCount, greaterThan(0));
   });
 }
