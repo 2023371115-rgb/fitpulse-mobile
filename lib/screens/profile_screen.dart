@@ -77,11 +77,11 @@ class ProfileScreen extends StatelessWidget {
           Center(child: Text(u.email, style: T.muted)),
           gap(16),
           Row(children: [
-            stat(u.weightKg == u.weightKg.roundToDouble() ? '${u.weightKg.round()}' : u.weightKg.toStringAsFixed(1), 'kg'),
+            stat(u.weightKg == null ? '--' : Fmt.compact(u.weightKg!), 'kg'),
             hgap(10),
-            stat('${u.heightCm}', 'cm'),
+            stat(u.heightCm == null ? '--' : '${u.heightCm}', 'cm'),
             hgap(10),
-            stat('${u.age}', 'años'),
+            stat(u.age == null ? '--' : '${u.age}', 'años'),
           ]),
           gap(10),
           FpCard(
@@ -90,7 +90,9 @@ class ProfileScreen extends StatelessWidget {
             child: Row(children: [
               const Icon(Icons.accessibility_new_rounded, color: FP.green, size: 20),
               hgap(10),
-              Expanded(child: Text('IMC ${u.bmi.toStringAsFixed(1)} · ${u.bmiLabel}', style: T.bodyStrong)),
+              Expanded(
+                child: Text(u.bmi == null ? 'Completa tu peso y estatura' : 'IMC ${u.bmi!.toStringAsFixed(1)} · ${u.bmiLabel}', style: T.bodyStrong),
+              ),
               Text('Meta: ${Fmt.number(u.dailyStepGoal)} pasos', style: T.small),
             ]),
           ),
@@ -108,6 +110,8 @@ class ProfileScreen extends StatelessWidget {
             onPressed: () async {
               final ok = await confirmDialog(context, title: '¿Cerrar sesión?', message: 'Podrás volver a entrar con tu correo y contraseña.', confirm: 'Cerrar sesión');
               if (!ok || !context.mounted) return;
+              await AppScope.read(context).logout();
+              if (!context.mounted) return;
               Navigator.of(context).pushAndRemoveUntil(fadeRoute(const AuthScreen()), (_) => false);
             },
           ),
@@ -132,9 +136,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.initState();
     final u = AppScope.read(context).user;
     _name = TextEditingController(text: u.name);
-    _weight = TextEditingController(text: u.weightKg.toString().replaceAll(RegExp(r'\.0$'), ''));
-    _height = TextEditingController(text: '${u.heightCm}');
-    _age = TextEditingController(text: '${u.age}');
+    _weight = TextEditingController(text: u.weightKg == null ? '' : u.weightKg.toString().replaceAll(RegExp(r'\.0$'), ''));
+    _height = TextEditingController(text: u.heightCm == null ? '' : '${u.heightCm}');
+    _age = TextEditingController(text: u.age == null ? '' : '${u.age}');
     _steps = TextEditingController(text: '${u.dailyStepGoal}');
   }
 
@@ -146,24 +150,37 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
-  String? _range(String? v, num lo, num hi, String what) {
+  bool _saving = false;
+
+  /// Peso, estatura y edad son opcionales; si se escriben deben estar en rango.
+  String? _range(String? v, num lo, num hi, String what, {bool optional = false}) {
+    if (optional && (v ?? '').trim().isEmpty) return null;
     final n = num.tryParse(v ?? '');
     if (n == null) return 'Escribe tu $what';
     if (n < lo || n > hi) return 'Valor entre $lo y $hi';
     return null;
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
-    AppScope.read(context).updateProfile(
-      name: _name.text.trim(),
-      weightKg: double.parse(_weight.text),
-      heightCm: int.parse(_height.text),
-      age: int.parse(_age.text),
-      dailyStepGoal: int.parse(_steps.text),
+    setState(() => _saving = true);
+    final ok = await guardApi(
+      context,
+      () => AppScope.read(context).updateProfile(
+        name: _name.text.trim(),
+        weightKg: double.tryParse(_weight.text),
+        heightCm: int.tryParse(_height.text),
+        age: int.tryParse(_age.text),
+        dailyStepGoal: int.parse(_steps.text),
+      ),
     );
-    Navigator.pop(context);
-    toast(context, 'Perfil actualizado');
+    if (!mounted) return;
+    if (ok) {
+      Navigator.pop(context);
+      toast(context, 'Perfil actualizado');
+    } else {
+      setState(() => _saving = false);
+    }
   }
 
   @override
@@ -197,20 +214,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           Row(children: [
             Expanded(
               child: field(_weight, 'Peso', suffix: 'kg', type: const TextInputType.numberWithOptions(decimal: true),
-                  fmt: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], validator: (v) => _range(v, 30, 250, 'peso')),
+                  fmt: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], validator: (v) => _range(v, 30, 250, 'peso', optional: true)),
             ),
             hgap(10),
-            Expanded(child: field(_height, 'Estatura', suffix: 'cm', type: TextInputType.number, fmt: digits, validator: (v) => _range(v, 100, 230, 'estatura'))),
+            Expanded(child: field(_height, 'Estatura', suffix: 'cm', type: TextInputType.number, fmt: digits, validator: (v) => _range(v, 100, 230, 'estatura', optional: true))),
           ]),
           Row(children: [
-            Expanded(child: field(_age, 'Edad', suffix: 'años', type: TextInputType.number, fmt: digits, validator: (v) => _range(v, 12, 100, 'edad'))),
+            Expanded(child: field(_age, 'Edad', suffix: 'años', type: TextInputType.number, fmt: digits, validator: (v) => _range(v, 12, 100, 'edad', optional: true))),
             hgap(10),
             Expanded(child: field(_steps, 'Meta diaria', suffix: 'pasos', type: TextInputType.number, fmt: digits, validator: (v) => _range(v, 1000, 50000, 'meta'))),
           ]),
           gap(4),
           const Text('Tu peso y estatura se usan para estimar calorías y distancia.', style: T.small),
           gap(20),
-          FilledButton(onPressed: _save, child: const Text('Guardar cambios')),
+          FilledButton(onPressed: _saving ? null : _save, child: Text(_saving ? 'Guardando…' : 'Guardar cambios')),
         ]),
       ),
     );
@@ -290,18 +307,19 @@ class PrivacyScreen extends StatelessWidget {
         ),
         gap(16),
         OutlinedButton.icon(
-          onPressed: () => toast(context, 'Te enviaremos tus datos a ${app.user.email} (simulado)', icon: Icons.download_rounded),
+          onPressed: () => toast(context, 'La descarga de tus datos estará disponible en la siguiente versión', icon: Icons.info_rounded),
           icon: const Icon(Icons.download_rounded),
           label: const Text('Descargar mis datos'),
         ),
         gap(10),
         TextButton.icon(
           onPressed: () async {
-            final ok = await confirmDialog(context,
-                title: '¿Eliminar cuenta?', message: 'Se borrarán tu perfil, sesiones y metas. Esta acción no se puede deshacer.', confirm: 'Eliminar', destructive: true);
+            final password = await _askPassword(context);
+            if (password == null || !context.mounted) return;
+            final ok = await guardApi(context, () => AppScope.read(context).deleteAccount(password));
             if (!ok || !context.mounted) return;
-            AppScope.read(context).resetDemo();
             Navigator.of(context).pushAndRemoveUntil(fadeRoute(const AuthScreen(register: true)), (_) => false);
+            toast(context, 'Tu cuenta y tus datos fueron eliminados', icon: Icons.delete_forever_rounded);
           },
           icon: const Icon(Icons.delete_forever_outlined, color: FP.redDark),
           label: const Text('Eliminar mi cuenta', style: TextStyle(color: FP.redDark)),
@@ -337,7 +355,7 @@ class AboutScreen extends StatelessWidget {
           ),
         ),
         gap(4),
-        const Center(child: Text('Versión 0.2.0 · Prototipo navegable', style: T.muted)),
+        const Center(child: Text('Versión 0.3.0 · Unidad 2', style: T.muted)),
         gap(20),
         FpCard(
           child: Column(children: [
@@ -356,12 +374,55 @@ class AboutScreen extends StatelessWidget {
         FpCard(
           color: FP.mintSoft,
           child: const Row(children: [
-            Icon(Icons.info_outline_rounded, color: FP.green),
+            Icon(Icons.dns_outlined, color: FP.green),
             SizedBox(width: 10),
-            Expanded(child: Text('Esta versión usa datos simulados. La conexión con la API llegará en la Unidad 2.', style: T.body)),
+            Expanded(child: _ConnectionInfo()),
           ]),
         ),
       ],
     );
   }
+}
+
+class _ConnectionInfo extends StatelessWidget {
+  const _ConnectionInfo();
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    return Text(
+      app.isDemo ? 'Modo demo: datos de ejemplo guardados solo en este teléfono.' : 'Conectado a la API: ${app.apiUrl}',
+      style: T.body,
+    );
+  }
+}
+
+/// Pide la contraseña para confirmar la eliminación de la cuenta.
+Future<String?> _askPassword(BuildContext context) {
+  final ctrl = TextEditingController();
+  return showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('¿Eliminar cuenta?', style: T.h2),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Se borrarán tu perfil, sesiones, metas, dispositivos y notificaciones. Esta acción no se puede deshacer.', style: T.muted),
+        gap(16),
+        TextField(
+          controller: ctrl,
+          obscureText: true,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Confirma tu contraseña', prefixIcon: Icon(Icons.lock_outline_rounded)),
+        ),
+      ]),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, ctrl.text.isEmpty ? null : ctrl.text),
+          style: FilledButton.styleFrom(minimumSize: const Size(110, 46), backgroundColor: FP.redDark),
+          child: const Text('Eliminar'),
+        ),
+      ],
+    ),
+  );
 }

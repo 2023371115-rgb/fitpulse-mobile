@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../api/api_client.dart';
+import '../api/api_config.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import 'shell.dart';
 
-/// Figuras 1 y 2: Registro / Inicio de sesión (validación real, acceso simulado).
+/// Figuras 1 y 2: Registro / Inicio de sesión contra la API (JWT).
+///
+/// Validaciones de la Práctica 5 (código seguro): campos sin espacios vacíos,
+/// longitud máxima, contraseña de 8+ caracteres, contraseña oculta y mensajes
+/// de error genéricos. El backend vuelve a validar todo.
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key, this.register = false});
   final bool register;
@@ -35,13 +42,15 @@ class _AuthScreenState extends State<AuthScreen> {
   String? _validateEmail(String? v) {
     final t = (v ?? '').trim();
     if (t.isEmpty) return 'Escribe tu correo electrónico';
+    if (t.length > 120) return 'Máximo 120 caracteres';
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(t)) return 'Correo no válido';
     return null;
   }
 
   String? _validatePass(String? v) {
-    if ((v ?? '').isEmpty) return 'Escribe tu contraseña';
+    if ((v ?? '').trim().isEmpty) return 'Escribe tu contraseña';
     if (v!.length < 8) return 'Mínimo 8 caracteres';
+    if (v.length > 72) return 'Máximo 72 caracteres';
     return null;
   }
 
@@ -54,13 +63,140 @@ class _AuthScreenState extends State<AuthScreen> {
     }
     setState(() => _loading = true);
     final app = AppScope.read(context);
-    if (_register) {
-      await app.register(_name.text, _email.text);
-    } else {
-      await app.login(_email.text);
+    try {
+      if (_register) {
+        await app.register(_name.text, _email.text, _pass.text);
+      } else {
+        await app.login(_email.text, _pass.text);
+      }
+      if (!mounted) return;
+      _pass.clear();
+      _pass2.clear();
+      Navigator.of(context).pushAndRemoveUntil(fadeRoute(const Shell()), (_) => false);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      if (e.isNetwork) {
+        _offerDemo(e.message);
+      } else {
+        toast(context, e.message, icon: Icons.error_outline_rounded);
+      }
     }
+  }
+
+  /// Sin conexión con el servidor: permite revisar la dirección o entrar en modo demo.
+  Future<void> _offerDemo(String message) async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sin conexión', style: T.h2),
+        content: Text('$message\n\nPuedes revisar la dirección del servidor o explorar la app con datos de ejemplo.', style: T.muted),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, 'server'), child: const Text('Servidor')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'demo'),
+            style: FilledButton.styleFrom(minimumSize: const Size(110, 46)),
+            child: const Text('Modo demo'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'server') _serverSheet();
+    if (choice == 'demo') _enterDemo();
+  }
+
+  Future<void> _enterDemo() async {
+    setState(() => _loading = true);
+    await AppScope.read(context).enterDemo();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(fadeRoute(const Shell()), (_) => false);
+  }
+
+  /// Configura la dirección de la API sin volver a compilar la app.
+  void _serverSheet() {
+    final app = AppScope.read(context);
+    final ctrl = TextEditingController(text: app.apiUrl);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        String? status;
+        bool ok = false;
+        bool testing = false;
+        return StatefulBuilder(
+          builder: (ctx, setSheet) => Padding(
+            padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.of(ctx).viewInsets.bottom + 28),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const Text('Servidor', style: T.h2),
+              gap(6),
+              const Text('Dirección de la API de FitPulse (Node.js + Express).', style: T.muted),
+              gap(16),
+              TextField(
+                controller: ctrl,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                decoration: const InputDecoration(hintText: 'http://10.0.2.2:3000/api', prefixIcon: Icon(Icons.dns_outlined)),
+              ),
+              gap(10),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                ActionChip(label: const Text('Esta PC'), onPressed: () => ctrl.text = ApiConfig.platformDefault),
+                ActionChip(label: const Text('Render'), onPressed: () => ctrl.text = ApiConfig.production),
+              ]),
+              if (status != null) ...[
+                gap(12),
+                Row(children: [
+                  Icon(ok ? Icons.check_circle_rounded : Icons.error_outline_rounded, color: ok ? FP.green : FP.redDark, size: 20),
+                  hgap(8),
+                  Expanded(child: Text(status!, style: T.small.copyWith(color: ok ? FP.green : FP.redDark, fontWeight: FontWeight.w600))),
+                ]),
+              ],
+              gap(16),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: testing
+                        ? null
+                        : () async {
+                            setSheet(() => testing = true);
+                            await app.setApiUrl(ctrl.text);
+                            ctrl.text = app.apiUrl;
+                            try {
+                              final v = await app.checkServer();
+                              setSheet(() {
+                                ok = true;
+                                status = 'Conectado · $v';
+                              });
+                            } on ApiException catch (e) {
+                              setSheet(() {
+                                ok = false;
+                                status = e.message;
+                              });
+                            } finally {
+                              setSheet(() => testing = false);
+                            }
+                          },
+                    child: Text(testing ? 'Probando…' : 'Probar'),
+                  ),
+                ),
+                hgap(10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () async {
+                      await app.setApiUrl(ctrl.text);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (mounted) toast(context, 'Servidor guardado', icon: Icons.dns_rounded);
+                    },
+                    child: const Text('Guardar'),
+                  ),
+                ),
+              ]),
+            ]),
+          ),
+        );
+      },
+    );
   }
 
   void _fillDemo() {
@@ -89,7 +225,7 @@ class _AuthScreenState extends State<AuthScreen> {
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
-              toast(context, 'Enlace enviado a ${ctrl.text.isEmpty ? 'tu correo' : ctrl.text} (simulado)', icon: Icons.mark_email_read_rounded);
+              toast(context, 'La recuperación por correo estará disponible en la siguiente versión', icon: Icons.info_rounded);
             },
             child: const Text('Enviar enlace'),
           ),
@@ -115,7 +251,15 @@ class _AuthScreenState extends State<AuthScreen> {
           child: Form(
             key: _form,
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              gap(_register ? 28 : 64),
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  tooltip: 'Servidor',
+                  onPressed: _serverSheet,
+                  icon: const Icon(Icons.dns_outlined, color: FP.subtle),
+                ),
+              ),
+              gap(_register ? 0 : 24),
               const Align(alignment: Alignment.centerLeft, child: FpLogo(size: 40, textSize: 34)),
               gap(_register ? 14 : 22),
               if (_register)
@@ -131,6 +275,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   controller: _name,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
+                  inputFormatters: [LengthLimitingTextInputFormatter(80)],
                   decoration: _dec('Nombre completo', Icons.person_outline_rounded),
                   validator: (v) => (v ?? '').trim().length < 3 ? 'Escribe tu nombre completo' : null,
                 ),
@@ -140,6 +285,8 @@ class _AuthScreenState extends State<AuthScreen> {
                 controller: _email,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
+                autocorrect: false,
+                inputFormatters: [LengthLimitingTextInputFormatter(120), FilteringTextInputFormatter.deny(RegExp(r'\s'))],
                 decoration: _dec('Correo electrónico', Icons.mail_outline_rounded),
                 validator: _validateEmail,
               ),
@@ -147,6 +294,9 @@ class _AuthScreenState extends State<AuthScreen> {
               TextFormField(
                 controller: _pass,
                 obscureText: _hide,
+                autocorrect: false,
+                enableSuggestions: false,
+                inputFormatters: [LengthLimitingTextInputFormatter(72)],
                 textInputAction: _register ? TextInputAction.next : TextInputAction.done,
                 decoration: _dec('Contraseña', Icons.lock_outline_rounded, suffix: eye),
                 validator: _validatePass,
@@ -157,6 +307,9 @@ class _AuthScreenState extends State<AuthScreen> {
                 TextFormField(
                   controller: _pass2,
                   obscureText: _hide,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  inputFormatters: [LengthLimitingTextInputFormatter(72)],
                   decoration: _dec('Confirmar contraseña', Icons.lock_outline_rounded),
                   validator: (v) => v != _pass.text ? 'Las contraseñas no coinciden' : null,
                 ),
@@ -188,6 +341,11 @@ class _AuthScreenState extends State<AuthScreen> {
               if (!_register) ...[
                 gap(10),
                 OutlinedButton.icon(onPressed: _fillDemo, icon: const Icon(Icons.bolt_rounded, color: FP.red), label: const Text('Usar cuenta demo')),
+                gap(4),
+                TextButton(
+                  onPressed: _loading ? null : _enterDemo,
+                  child: const Text('Explorar sin conexión (modo demo)', style: TextStyle(color: FP.muted)),
+                ),
               ],
               gap(14),
               Center(

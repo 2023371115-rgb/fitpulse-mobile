@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../data/mock_data.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -20,14 +19,19 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
     final now = DateTime.now();
-    final goal = app.user.dailyStepGoal;
+    final goal = app.user.dailyStepGoal <= 0 ? 10000 : app.user.dailyStepGoal;
     final progress = app.todaySteps / goal;
+    final week = app.summary.days.length > 7 ? app.summary.days.sublist(app.summary.days.length - 7) : app.summary.days;
+    final hr = app.heartRate;
     final last = app.lastSession;
     final device = app.mainDevice;
 
     return Scaffold(
       body: SafeArea(
-        child: ListView(padding: const EdgeInsets.fromLTRB(20, 14, 20, 28), children: [
+        child: RefreshIndicator(
+          color: FP.red,
+          onRefresh: app.refreshAll,
+          child: ListView(physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.fromLTRB(20, 14, 20, 28), children: [
           // Encabezado
           Row(children: [
             Expanded(
@@ -39,7 +43,28 @@ class HomeScreen extends StatelessWidget {
             _BellButton(count: app.unreadCount, onTap: () => push(context, const NotificationsScreen())),
           ]),
           gap(4),
-          Text(Fmt.longDate(now), style: T.small),
+          Row(children: [
+            Text(Fmt.longDate(now), style: T.small),
+            if (app.isDemo) ...[hgap(8), const FpTag('Modo demo', color: FP.redSoft, textColor: FP.red)],
+            if (app.loading) ...[
+              hgap(8),
+              const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: FP.subtle)),
+            ],
+          ]),
+          if (app.loadError != null) ...[
+            gap(12),
+            FpCard(
+              color: FP.redSoft,
+              onTap: app.refreshAll,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(children: [
+                const Icon(Icons.cloud_off_rounded, color: FP.redDark, size: 20),
+                hgap(10),
+                Expanded(child: Text(app.loadError!, style: T.small.copyWith(color: FP.redDark, fontWeight: FontWeight.w600))),
+                const Text('Reintentar', style: TextStyle(color: FP.red, fontWeight: FontWeight.w800, fontSize: 13)),
+              ]),
+            ),
+          ],
           gap(16),
 
           // Pasos
@@ -82,12 +107,15 @@ class HomeScreen extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(children: [
                       const Expanded(child: Text('Ritmo cardíaco', style: T.muted)),
-                      BeatingHeart(bpm: app.heartRate, size: 18),
+                      if (hr != null) BeatingHeart(bpm: hr, size: 18) else const Icon(Icons.favorite_border_rounded, color: FP.subtle, size: 18),
                     ]),
                     gap(6),
-                    _BigValue(value: '${app.heartRate}', unit: 'bpm', color: FP.red),
+                    _BigValue(value: hr == null ? '--' : '$hr', unit: 'bpm', color: FP.red),
                     gap(8),
-                    const FpLineChart(data: MockData.todayHr, height: 36, strokeWidth: 2, fill: true),
+                    if (app.summary.hrToday.length >= 2)
+                      FpLineChart(data: app.summary.hrToday, height: 36, strokeWidth: 2, fill: true)
+                    else
+                      const SizedBox(height: 36, child: Align(alignment: Alignment.bottomLeft, child: Text('Sin lecturas hoy', style: T.small))),
                   ]),
                 ),
               ),
@@ -144,10 +172,13 @@ class HomeScreen extends StatelessWidget {
                 Icon(Icons.chevron_right_rounded, color: FP.red, size: 18),
               ]),
               gap(8),
+              if (week.isEmpty)
+                const SizedBox(height: 120, child: Center(child: Text('Aún no hay actividad esta semana', style: T.muted)))
+              else
               FpBarChart(
-                values: MockData.weekSteps.sublist(0, 6).followedBy([app.todaySteps.toDouble()]).toList(),
-                labels: MockData.weekLabels,
-                highlight: 6,
+                values: week.map((d) => d.steps.toDouble()).toList(),
+                labels: week.map((d) => d.weekdayLetter).toList(),
+                highlight: week.length - 1,
                 height: 120,
                 goal: goal.toDouble(),
                 format: (v) => Fmt.number(v),
@@ -169,12 +200,26 @@ class HomeScreen extends StatelessWidget {
                   child: Text.rich(TextSpan(children: [
                     TextSpan(text: device.name, style: const TextStyle(fontWeight: FontWeight.w800, color: FP.ink)),
                     TextSpan(
-                      text: device.syncing ? ' · sincronizando…' : ' · ${device.battery}% · ${Fmt.ago(device.lastSync)}',
+                      text: device.syncing
+                          ? ' · sincronizando…'
+                          : ' · ${device.battery == null ? '--' : '${device.battery}%'} · ${device.lastSync == null ? 'sin sincronizar' : Fmt.ago(device.lastSync!)}',
                       style: const TextStyle(color: FP.muted),
                     ),
                   ])),
                 ),
                 Icon(device.connected ? Icons.bluetooth_connected_rounded : Icons.bluetooth_disabled_rounded, color: device.connected ? FP.green : FP.subtle, size: 20),
+              ]),
+            )
+          else
+            FpCard(
+              color: FP.mintSoft,
+              onTap: () => push(context, const DevicesScreen()),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: const Row(children: [
+                Icon(Icons.bluetooth_searching_rounded, color: FP.green),
+                SizedBox(width: 10),
+                Expanded(child: Text('Vincula tu wearable para registrar pasos y ritmo cardíaco', style: T.bodyStrong)),
+                Icon(Icons.chevron_right_rounded, color: FP.subtle),
               ]),
             ),
           gap(16),
@@ -193,6 +238,7 @@ class HomeScreen extends StatelessWidget {
             child: const Text('Ver mis sesiones'),
           ),
         ]),
+        ),
       ),
     );
   }

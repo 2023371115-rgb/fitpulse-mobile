@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../api/api_client.dart';
 import '../theme/app_theme.dart';
 
 Widget gap([double h = 12]) => SizedBox(height: h);
@@ -7,7 +8,7 @@ Widget hgap([double w = 12]) => SizedBox(width: w);
 void push(BuildContext context, Widget page) => Navigator.of(context).push(fadeRoute(page));
 
 /// Transición suave (fade + slide) usada en toda la app.
-Route<T> fadeRoute<T>(Widget page) => PageRouteBuilder<T>(
+Route<R> fadeRoute<R>(Widget page) => PageRouteBuilder<R>(
       transitionDuration: const Duration(milliseconds: 320),
       reverseTransitionDuration: const Duration(milliseconds: 240),
       pageBuilder: (_, __, ___) => page,
@@ -34,6 +35,19 @@ void toast(BuildContext context, String message, {IconData icon = Icons.check_ci
       ]),
       duration: const Duration(milliseconds: 2200),
     ));
+}
+
+/// Ejecuta una acción que llama a la API; si falla, muestra el mensaje de error.
+/// Devuelve true si terminó bien.
+Future<bool> guardApi(BuildContext context, Future<void> Function() action, {String? success, IconData successIcon = Icons.check_circle_rounded}) async {
+  try {
+    await action();
+    if (success != null && context.mounted) toast(context, success, icon: successIcon);
+    return true;
+  } on ApiException catch (e) {
+    if (context.mounted) toast(context, e.message, icon: Icons.error_outline_rounded);
+    return false;
+  }
 }
 
 /// Logotipo: marca con línea de pulso + "Fit" "Pulse".

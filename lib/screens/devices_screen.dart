@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import '../data/mock_data.dart';
+import '../api/api_client.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -47,10 +47,15 @@ class _DevicesScreenState extends State<DevicesScreen> {
       if (!mounted) return;
       setState(() => _step = min(_step + 1, _syncSteps.length - 1));
     });
-    final n = await app.syncDevice(d);
-    _stepTimer?.cancel();
-    if (!mounted) return;
-    toast(context, 'Sincronizado: ${Fmt.number(n)} pasos nuevos', icon: Icons.sync_rounded);
+    try {
+      final n = await app.syncDevice(d);
+      if (!mounted) return;
+      toast(context, 'Sincronizado: ${Fmt.number(n)} pasos nuevos', icon: Icons.sync_rounded);
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.message, icon: Icons.cloud_off_rounded);
+    } finally {
+      _stepTimer?.cancel();
+    }
   }
 
   @override
@@ -65,7 +70,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
         if (main == null)
           const EmptyState(icon: Icons.watch_rounded, title: 'Sin dispositivos', message: 'Vincula tu smartwatch o banda para registrar tu actividad automáticamente.')
         else ...[
-          _MainDeviceCard(device: main, stepLabel: main.syncing ? _syncSteps[_step] : null, onToggle: () => app.toggleConnection(main)),
+          _MainDeviceCard(device: main, stepLabel: main.syncing ? _syncSteps[_step] : null, onToggle: () => _guard(() => app.toggleConnection(main))),
           gap(),
           FilledButton(
             onPressed: main.syncing || !main.connected ? null : () => _sync(main),
@@ -116,10 +121,10 @@ class _DevicesScreenState extends State<DevicesScreen> {
                   icon: const Icon(Icons.more_vert_rounded, color: FP.muted),
                   onSelected: (v) async {
                     if (v == 'toggle') {
-                      app.toggleConnection(d);
+                      await _guard(() => app.toggleConnection(d));
                     } else if (v == 'remove') {
                       final ok = await confirmDialog(context, title: '¿Olvidar ${d.name}?', message: 'Dejará de compartir datos con FitPulse.', confirm: 'Olvidar', destructive: true);
-                      if (ok) app.removeDevice(d.id);
+                      if (ok) await _guard(() => app.removeDevice(d.id));
                     }
                   },
                   itemBuilder: (_) => [
@@ -148,6 +153,15 @@ class _DevicesScreenState extends State<DevicesScreen> {
     );
   }
 
+  /// Ejecuta una acción de la API y muestra el error si falla.
+  Future<void> _guard(Future<void> Function() action) async {
+    try {
+      await action();
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.message, icon: Icons.error_outline_rounded);
+    }
+  }
+
   IconData _iconFor(String k) => switch (k) {
         'Pasos' => Icons.directions_walk_rounded,
         'Ritmo cardíaco' => Icons.favorite_border_rounded,
@@ -165,7 +179,9 @@ class _MainDeviceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final d = device;
-    final batteryColor = d.battery <= 20 ? FP.red : d.battery <= 50 ? FP.amber : FP.green;
+    final battery = d.battery;
+    final batteryColor = battery == null ? FP.subtle : battery <= 20 ? FP.red : battery <= 50 ? FP.amber : FP.green;
+    final batteryText = battery == null ? '--' : '$battery%';
     return FpCard(
       padding: const EdgeInsets.all(18),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -179,7 +195,7 @@ class _MainDeviceCard extends StatelessWidget {
               Row(children: [
                 Icon(Icons.circle, size: 10, color: d.connected ? FP.green : FP.subtle),
                 hgap(6),
-                Text('${d.connected ? 'Conectado' : 'Desconectado'} · ${d.battery}%', style: T.muted.copyWith(fontSize: 13)),
+                Text('${d.connected ? 'Conectado' : 'Desconectado'} · $batteryText', style: T.muted.copyWith(fontSize: 13)),
               ]),
             ]),
           ),
@@ -189,15 +205,15 @@ class _MainDeviceCard extends StatelessWidget {
         Row(children: [
           Icon(Icons.battery_std_rounded, size: 18, color: batteryColor),
           hgap(8),
-          Expanded(child: ProgressBar(value: d.battery / 100, color: batteryColor, height: 7)),
+          Expanded(child: ProgressBar(value: (battery ?? 0) / 100, color: batteryColor, height: 7)),
           hgap(10),
-          Text('${d.battery}%', style: T.small),
+          Text(batteryText, style: T.small),
         ]),
         gap(12),
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 220),
           child: Text(
-            stepLabel ?? 'Última sincronización: ${Fmt.ago(d.lastSync)}',
+            stepLabel ?? (d.lastSync == null ? 'Aún no se sincroniza' : 'Última sincronización: ${Fmt.ago(d.lastSync!)}'),
             key: ValueKey(stepLabel ?? 'idle'),
             style: T.muted.copyWith(fontSize: 13, color: stepLabel != null ? FP.red : FP.muted, fontWeight: stepLabel != null ? FontWeight.w700 : FontWeight.w400),
           ),
@@ -205,7 +221,7 @@ class _MainDeviceCard extends StatelessWidget {
         gap(10),
         Wrap(spacing: 6, runSpacing: 6, children: [
           FpTag(d.model, color: Colors.white),
-          FpTag('Firmware ${d.firmware}', color: Colors.white),
+          if (d.firmware != '—') FpTag('Firmware ${d.firmware}', color: Colors.white),
           const FpTag('BLE 5.2', color: Colors.white),
         ]),
       ]),
@@ -274,27 +290,35 @@ class _ScanSheet extends StatefulWidget {
 class _ScanSheetState extends State<_ScanSheet> with SingleTickerProviderStateMixin {
   late final AnimationController _radar = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
   final List<FoundDevice> _found = [];
-  final List<Timer> _timers = [];
+  StreamSubscription<FoundDevice>? _scan;
   String? _pairing;
 
   @override
   void initState() {
     super.initState();
-    for (var i = 0; i < MockData.nearbyDevices.length; i++) {
-      _timers.add(Timer(Duration(milliseconds: 900 + i * 900), () {
-        if (mounted) setState(() => _found.add(MockData.nearbyDevices[i]));
-      }));
-    }
-    _timers.add(Timer(const Duration(milliseconds: 3600), () {
-      if (mounted) setState(() => _radar.stop());
-    }));
+    _startScan();
+  }
+
+  /// Búsqueda por Bluetooth a través del WearableService.
+  void _startScan() {
+    _scan?.cancel();
+    setState(() {
+      _found.clear();
+      _radar.repeat();
+    });
+    _scan = AppScope.read(context).wearable.scan().listen(
+      (d) {
+        if (mounted) setState(() => _found.add(d));
+      },
+      onDone: () {
+        if (mounted) setState(() => _radar.stop());
+      },
+    );
   }
 
   @override
   void dispose() {
-    for (final t in _timers) {
-      t.cancel();
-    }
+    _scan?.cancel();
     _radar.dispose();
     super.dispose();
   }
@@ -328,11 +352,16 @@ class _ScanSheetState extends State<_ScanSheet> with SingleTickerProviderStateMi
     );
     if (ok != true || !mounted) return;
     setState(() => _pairing = f.name);
-    await Future<void>.delayed(const Duration(milliseconds: 1500));
-    if (!mounted) return;
-    app.pairDevice(f);
-    Navigator.pop(context);
-    toast(context, '${f.name} vinculado correctamente', icon: Icons.bluetooth_connected_rounded);
+    try {
+      await app.pairDevice(f);
+      if (!mounted) return;
+      Navigator.pop(context);
+      toast(context, '${f.name} vinculado correctamente', icon: Icons.bluetooth_connected_rounded);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _pairing = null);
+      toast(context, e.message, icon: Icons.error_outline_rounded);
+    }
   }
 
   @override
@@ -391,18 +420,7 @@ class _ScanSheetState extends State<_ScanSheet> with SingleTickerProviderStateMi
         if (!scanning) ...[
           gap(6),
           OutlinedButton.icon(
-            onPressed: () => setState(() {
-              _found.clear();
-              _radar.repeat();
-              for (var i = 0; i < MockData.nearbyDevices.length; i++) {
-                _timers.add(Timer(Duration(milliseconds: 700 + i * 700), () {
-                  if (mounted) setState(() => _found.add(MockData.nearbyDevices[i]));
-                }));
-              }
-              _timers.add(Timer(const Duration(milliseconds: 2800), () {
-                if (mounted) setState(() => _radar.stop());
-              }));
-            }),
+            onPressed: _startScan,
             icon: const Icon(Icons.refresh_rounded),
             label: const Text('Buscar de nuevo'),
           ),

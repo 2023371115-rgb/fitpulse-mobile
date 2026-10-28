@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/charts.dart';
 import '../widgets/common.dart';
@@ -35,7 +36,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     ),
   ];
 
-  void _goAuth({bool register = true}) => Navigator.of(context).pushReplacement(fadeRoute(AuthScreen(register: register)));
+  void _goAuth({bool register = true}) {
+    AppScope.read(context).store.setOnboardingSeen();
+    Navigator.of(context).pushReplacement(fadeRoute(AuthScreen(register: register)));
+  }
 
   @override
   void dispose() {

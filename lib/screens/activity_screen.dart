@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../api/api_client.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -77,7 +78,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final saved = await Navigator.of(context).push<bool>(fadeRoute(ActivitySummaryScreen(session: session)));
     if (!mounted) return;
     if (saved == true) {
-      app.addSession(session);
       _reset();
       toast(context, 'Sesión guardada en tu historial');
     } else if (saved == false) {
@@ -132,10 +132,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
           height: 46,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: ActivityType.values.length,
+            itemCount: ActivityType.selectable.length,
             separatorBuilder: (_, __) => hgap(8),
             itemBuilder: (_, i) {
-              final t = ActivityType.values[i];
+              final t = ActivityType.selectable[i];
               return Opacity(
                 opacity: active && t != _type ? .45 : 1,
                 child: FpPill(t.label, icon: t.icon, selected: t == _type, onTap: active ? () {} : () => setState(() => _type = t)),
@@ -276,61 +276,97 @@ class _LiveTile extends StatelessWidget {
       );
 }
 
-/// Resumen al terminar una actividad.
-class ActivitySummaryScreen extends StatelessWidget {
+/// Resumen al terminar una actividad. "Guardar sesión" la envía a la API.
+class ActivitySummaryScreen extends StatefulWidget {
   const ActivitySummaryScreen({super.key, required this.session});
   final Session session;
 
   @override
+  State<ActivitySummaryScreen> createState() => _ActivitySummaryScreenState();
+}
+
+class _ActivitySummaryScreenState extends State<ActivitySummaryScreen> {
+  bool _saving = false;
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await AppScope.read(context).addSession(widget.session);
+      if (mounted) Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      toast(context, '${e.message} Tu actividad sigue aquí, intenta guardar de nuevo.', icon: Icons.cloud_off_rounded);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final s = session;
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(context)),
-        title: const Text('Resumen'),
-      ),
-      body: ListView(padding: const EdgeInsets.fromLTRB(20, 0, 20, 28), children: [
-        Center(
-          child: TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: .6, end: 1),
-            duration: const Duration(milliseconds: 700),
-            curve: Curves.elasticOut,
-            builder: (_, v, child) => Transform.scale(scale: v, child: child),
-            child: Container(
-              width: 92,
-              height: 92,
-              decoration: BoxDecoration(color: s.type.color, shape: BoxShape.circle, boxShadow: [
-                BoxShadow(color: s.type.color.withValues(alpha: .35), blurRadius: 28, offset: const Offset(0, 10)),
-              ]),
-              child: const Icon(Icons.emoji_events_rounded, color: Colors.white, size: 46),
+    final s = widget.session;
+    return PopScope(
+      canPop: !_saving,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(icon: const Icon(Icons.close_rounded), onPressed: _saving ? null : () => Navigator.pop(context)),
+          title: const Text('Resumen'),
+        ),
+        body: ListView(padding: const EdgeInsets.fromLTRB(20, 0, 20, 28), children: [
+          Center(
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: .6, end: 1),
+              duration: const Duration(milliseconds: 700),
+              curve: Curves.elasticOut,
+              builder: (_, v, child) => Transform.scale(scale: v, child: child),
+              child: Container(
+                width: 92,
+                height: 92,
+                decoration: BoxDecoration(color: s.type.color, shape: BoxShape.circle, boxShadow: [
+                  BoxShadow(color: s.type.color.withValues(alpha: .35), blurRadius: 28, offset: const Offset(0, 10)),
+                ]),
+                child: const Icon(Icons.emoji_events_rounded, color: Colors.white, size: 46),
+              ),
             ),
           ),
-        ),
-        gap(16),
-        const Center(child: Text('¡Buen trabajo!', style: T.h1)),
-        gap(4),
-        Center(child: Text('${s.type.title} · ${Fmt.day(s.start)} ${Fmt.time(s.start)}', style: T.muted)),
-        gap(20),
-        SessionStatsGrid(session: s),
-        gap(12),
-        FpCard(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Ritmo cardíaco', style: T.h3),
-            gap(10),
-            FpLineChart(data: s.hrSeries, height: 110),
-          ]),
-        ),
-        gap(20),
-        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Guardar sesión')),
-        gap(10),
-        TextButton(
-          onPressed: () async {
-            final ok = await confirmDialog(context, title: '¿Descartar actividad?', message: 'Los datos de esta actividad no se guardarán.', confirm: 'Descartar', destructive: true);
-            if (ok && context.mounted) Navigator.pop(context, false);
-          },
-          child: const Text('Descartar', style: TextStyle(color: FP.redDark)),
-        ),
-      ]),
+          gap(16),
+          const Center(child: Text('¡Buen trabajo!', style: T.h1)),
+          gap(4),
+          Center(child: Text('${s.type.title} · ${Fmt.day(s.start)} ${Fmt.time(s.start)}', style: T.muted)),
+          gap(20),
+          SessionStatsGrid(session: s),
+          if (s.hrSeries.length >= 2) ...[
+            gap(12),
+            FpCard(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Ritmo cardíaco', style: T.h3),
+                gap(10),
+                FpLineChart(data: s.hrSeries, height: 110),
+              ]),
+            ),
+          ],
+          gap(20),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            style: FilledButton.styleFrom(disabledBackgroundColor: FP.red.withValues(alpha: .7), disabledForegroundColor: Colors.white),
+            child: _saving
+                ? const Row(mainAxisSize: MainAxisSize.min, children: [
+                    SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white)),
+                    SizedBox(width: 12),
+                    Text('Guardando…'),
+                  ])
+                : const Text('Guardar sesión'),
+          ),
+          gap(10),
+          TextButton(
+            onPressed: _saving
+                ? null
+                : () async {
+                    final ok = await confirmDialog(context, title: '¿Descartar actividad?', message: 'Los datos de esta actividad no se guardarán.', confirm: 'Descartar', destructive: true);
+                    if (ok && context.mounted) Navigator.pop(context, false);
+                  },
+            child: const Text('Descartar', style: TextStyle(color: FP.redDark)),
+          ),
+        ]),
+      ),
     );
   }
 }

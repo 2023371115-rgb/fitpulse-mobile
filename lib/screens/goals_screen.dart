@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../api/api_client.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -85,7 +86,7 @@ class GoalsScreen extends StatelessWidget {
       isScrollControlled: true,
       builder: (ctx) {
         final color = goalColor(g);
-        const days = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+        final days = DateTime.now();
         return Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -118,26 +119,45 @@ class GoalsScreen extends StatelessWidget {
               Container(width: 1, height: 40, color: FP.border),
               Expanded(child: StatBlock(label: 'Objetivo', value: Fmt.compact(g.target), unit: g.type.unit, size: 22, center: true)),
             ]),
-            gap(18),
-            Text(g.period == GoalPeriod.daily ? 'Últimos 7 días' : 'Últimas 7 semanas', style: T.h3),
-            gap(8),
-            FpBarChart(
-              values: g.history.map((h) => h * 100).toList(),
-              labels: g.period == GoalPeriod.daily ? days : const ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'],
-              highlight: 6,
-              height: 120,
-              goal: 100,
-              highlightColor: color,
-              format: (v) => '${v.round()}%',
-            ),
-            gap(16),
+            if (g.history.length == 7) ...[
+              gap(18),
+              Text(g.period == GoalPeriod.daily ? 'Últimos 7 días' : 'Últimas 7 semanas', style: T.h3),
+              gap(8),
+              FpBarChart(
+                values: g.history.map((h) => h * 100).toList(),
+                labels: g.period == GoalPeriod.daily ? _dayLetters(days) : const ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'Hoy'],
+                highlight: 6,
+                height: 120,
+                goal: 100,
+                highlightColor: color,
+                format: (v) => '${v.round()}%',
+              ),
+            ],
+            if (!g.type.isAuto) ...[
+              gap(18),
+              _ManualProgress(goal: g, onSaved: () => Navigator.pop(ctx)),
+            ] else ...[
+              gap(10),
+              Text(
+                g.type == GoalType.steps
+                    ? 'Se calcula con tus sesiones y los pasos de tu wearable.'
+                    : 'Se calcula automáticamente con tus sesiones registradas.',
+                style: T.small,
+                textAlign: TextAlign.center,
+              ),
+            ],
+            gap(12),
             TextButton.icon(
               onPressed: () async {
                 final ok = await confirmDialog(ctx, title: '¿Eliminar meta?', message: '"${g.title}" dejará de aparecer en tu lista.', confirm: 'Eliminar', destructive: true);
                 if (!ok || !ctx.mounted) return;
-                AppScope.read(context).deleteGoal(g.id);
-                Navigator.pop(ctx);
-                toast(context, 'Meta eliminada', icon: Icons.delete_outline_rounded);
+                try {
+                  await AppScope.read(context).deleteGoal(g.id);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (context.mounted) toast(context, 'Meta eliminada', icon: Icons.delete_outline_rounded);
+                } on ApiException catch (e) {
+                  if (context.mounted) toast(context, e.message, icon: Icons.error_outline_rounded);
+                }
               },
               icon: const Icon(Icons.delete_outline_rounded, color: FP.redDark),
               label: const Text('Eliminar meta', style: TextStyle(color: FP.redDark)),
@@ -203,6 +223,8 @@ class _NewGoalSheetState extends State<_NewGoalSheet> {
   GoalPeriod _period = GoalPeriod.daily;
   late final TextEditingController _target = TextEditingController(text: _fmt(_type.suggested));
 
+  bool _saving = false;
+
   String _fmt(double v) => v == v.roundToDouble() ? v.round().toString() : v.toString();
 
   double _suggest(GoalType t, GoalPeriod p) {
@@ -214,6 +236,7 @@ class _NewGoalSheetState extends State<_NewGoalSheet> {
       GoalType.calories => 3000,
       GoalType.sleep => 8,
       GoalType.active => 300,
+      _ => t.suggested,
     };
   }
 
@@ -250,7 +273,7 @@ class _NewGoalSheetState extends State<_NewGoalSheet> {
           crossAxisSpacing: 8,
           childAspectRatio: 1.15,
           children: [
-            for (final t in GoalType.values)
+            for (final t in GoalType.selectable)
               GestureDetector(
                 onTap: () => _update(type: t),
                 child: AnimatedContainer(
@@ -311,16 +334,87 @@ class _NewGoalSheetState extends State<_NewGoalSheet> {
         ),
         gap(16),
         FilledButton(
-          onPressed: value <= 0
+          onPressed: value <= 0 || _saving
               ? null
-              : () {
-                  AppScope.read(context).addGoal(type: _type, target: value, period: _period);
-                  Navigator.pop(context);
-                  toast(context, 'Meta creada');
+              : () async {
+                  setState(() => _saving = true);
+                  try {
+                    await AppScope.read(context).addGoal(type: _type, target: value, period: _period);
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
+                    toast(context, 'Meta creada');
+                  } on ApiException catch (e) {
+                    if (!context.mounted) return;
+                    setState(() => _saving = false);
+                    toast(context, e.message, icon: Icons.error_outline_rounded);
+                  }
                 },
-          child: const Text('Guardar meta'),
+          child: Text(_saving ? 'Guardando…' : 'Guardar meta'),
         ),
       ]),
     );
   }
+}
+
+/// Letras de los últimos 7 días terminando hoy (p. ej. M M J V S D L).
+List<String> _dayLetters(DateTime today) {
+  const letters = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  return [for (var i = 6; i >= 0; i--) letters[today.subtract(Duration(days: i)).weekday - 1]];
+}
+
+/// Captura manual del avance para metas que no se miden solas (sueño, peso).
+class _ManualProgress extends StatefulWidget {
+  const _ManualProgress({required this.goal, required this.onSaved});
+  final Goal goal;
+  final VoidCallback onSaved;
+
+  @override
+  State<_ManualProgress> createState() => _ManualProgressState();
+}
+
+class _ManualProgressState extends State<_ManualProgress> {
+  late final TextEditingController _ctrl = TextEditingController(text: Fmt.compact(widget.goal.current));
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final value = double.tryParse(_ctrl.text.replaceAll(',', '.'));
+    if (value == null || value < 0 || value > 100000) {
+      toast(context, 'Escribe un valor válido', icon: Icons.info_rounded);
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await AppScope.read(context).updateGoalProgress(widget.goal, value);
+      if (!mounted) return;
+      widget.onSaved();
+      toast(context, 'Avance registrado');
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      toast(context, e.message, icon: Icons.error_outline_rounded);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Expanded(
+          child: TextField(
+            controller: _ctrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')), LengthLimitingTextInputFormatter(7)],
+            decoration: InputDecoration(labelText: 'Registrar ${widget.goal.periodLabel.toLowerCase()}', suffixText: widget.goal.type.unit),
+          ),
+        ),
+        hgap(10),
+        SizedBox(
+          width: 110,
+          child: FilledButton(onPressed: _saving ? null : _save, child: Text(_saving ? '…' : 'Guardar')),
+        ),
+      ]);
 }

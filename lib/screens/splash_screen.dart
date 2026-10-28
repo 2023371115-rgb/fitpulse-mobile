@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
+import 'auth_screen.dart';
 import 'onboarding_screen.dart';
+import 'shell.dart';
 
 /// Pantalla de arranque: el logotipo "dibuja" su línea de pulso.
 class SplashScreen extends StatefulWidget {
@@ -16,10 +19,24 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    Future<void>.delayed(const Duration(milliseconds: 2300), () {
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(fadeRoute(const OnboardingScreen()));
-    });
+    _start();
+  }
+
+  /// Muestra la animación mientras intenta recuperar la sesión guardada.
+  Future<void> _start() async {
+    final app = AppScope.read(context);
+    final results = await Future.wait<Object>([
+      app.restoreSession(),
+      Future<void>.delayed(const Duration(milliseconds: 2300)).then((_) => true),
+    ]);
+    if (!mounted) return;
+    final restored = results.first == true;
+    final Widget next = restored
+        ? const Shell()
+        : app.store.onboardingSeen
+            ? const AuthScreen()
+            : const OnboardingScreen();
+    Navigator.of(context).pushReplacement(fadeRoute(next));
   }
 
   @override

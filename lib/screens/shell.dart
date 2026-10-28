@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import '../state/app_state.dart';
+import '../theme/app_theme.dart';
+import '../widgets/common.dart';
 import 'activity_screen.dart';
+import 'auth_screen.dart';
 import 'goals_screen.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';
@@ -13,8 +17,31 @@ class Shell extends StatefulWidget {
 
 class _ShellState extends State<Shell> {
   int _index = 0;
+  AppState? _app;
 
   void _go(int i) => setState(() => _index = i);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final app = AppScope.read(context);
+    if (_app != app) {
+      _app?.sessionExpired.removeListener(_onExpired);
+      _app = app..sessionExpired.addListener(_onExpired);
+    }
+  }
+
+  @override
+  void dispose() {
+    _app?.sessionExpired.removeListener(_onExpired);
+    super.dispose();
+  }
+
+  void _onExpired() {
+    if (!mounted || _app?.sessionExpired.value != true) return;
+    Navigator.of(context).pushAndRemoveUntil(fadeRoute(const AuthScreen()), (_) => false);
+    toast(context, 'Tu sesión expiró. Vuelve a iniciar sesión.', icon: Icons.lock_clock_rounded);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +53,7 @@ class _ShellState extends State<Shell> {
         const ProfileScreen(),
       ]),
       bottomNavigationBar: DecoratedBox(
-        decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFDDE3E1)))),
+        decoration: const BoxDecoration(border: Border(top: BorderSide(color: FP.border))),
         child: NavigationBar(
           selectedIndex: _index,
           onDestinationSelected: _go,

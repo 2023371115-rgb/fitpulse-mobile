@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../api/api_client.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -30,7 +31,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
           height: 42,
           child: ListView(scrollDirection: Axis.horizontal, children: [
             FpPill('Todas', dense: true, selected: _filter == null, onTap: () => setState(() => _filter = null)),
-            for (final t in ActivityType.values) ...[
+            for (final t in ActivityType.selectable) ...[
               hgap(8),
               FpPill(t.label, dense: true, selected: _filter == t, onTap: () => setState(() => _filter = t)),
             ],
@@ -152,16 +153,43 @@ class SessionStatsGrid extends StatelessWidget {
   }
 }
 
-class SessionDetailScreen extends StatelessWidget {
+/// Detalle de una sesión. Descarga de la API las muestras de ritmo cardíaco.
+class SessionDetailScreen extends StatefulWidget {
   const SessionDetailScreen({super.key, required this.session});
   final Session session;
 
   @override
+  State<SessionDetailScreen> createState() => _SessionDetailScreenState();
+}
+
+class _SessionDetailScreenState extends State<SessionDetailScreen> {
+  late Session s = widget.session;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (s.hrSeries.isEmpty) _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final full = await AppScope.read(context).loadSession(s);
+      if (mounted) setState(() => s = full);
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.message, icon: Icons.cloud_off_rounded);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final s = session;
     const zoneNames = ['Z1 Recuperación', 'Z2 Quema grasa', 'Z3 Aeróbica', 'Z4 Umbral', 'Z5 Máxima'];
     const zoneColors = [Color(0xFF9FCFB7), FP.green, FP.amber, Color(0xFFEF7A45), FP.red];
-    final zones = s.zones;
+    final zones = s.zones(age: AppScope.of(context).user.age ?? 30);
+    final hasHr = s.hrSeries.length >= 2;
 
     return Scaffold(
       appBar: AppBar(
@@ -173,9 +201,14 @@ class SessionDetailScreen extends StatelessWidget {
             onPressed: () async {
               final ok = await confirmDialog(context, title: '¿Eliminar sesión?', message: 'Esta acción no se puede deshacer.', confirm: 'Eliminar', destructive: true);
               if (!ok || !context.mounted) return;
-              AppScope.read(context).deleteSession(s.id);
-              Navigator.pop(context);
-              toast(context, 'Sesión eliminada', icon: Icons.delete_outline_rounded);
+              try {
+                await AppScope.read(context).deleteSession(s.id);
+                if (!context.mounted) return;
+                Navigator.pop(context);
+                toast(context, 'Sesión eliminada', icon: Icons.delete_outline_rounded);
+              } on ApiException catch (e) {
+                if (context.mounted) toast(context, e.message, icon: Icons.error_outline_rounded);
+              }
             },
           ),
         ],
@@ -202,15 +235,26 @@ class SessionDetailScreen extends StatelessWidget {
               FpTag('${s.avgHr} bpm prom.', color: FP.redSoft, textColor: FP.red),
             ]),
             gap(12),
-            FpLineChart(data: s.hrSeries, height: 130),
-            gap(6),
-            Row(children: [
-              const Text('Inicio', style: T.small),
-              const Spacer(),
-              Text(Fmt.duration(s.duration), style: T.small),
-            ]),
+            if (hasHr) ...[
+              FpLineChart(data: s.hrSeries, height: 130),
+              gap(6),
+              Row(children: [
+                const Text('Inicio', style: T.small),
+                const Spacer(),
+                Text(Fmt.duration(s.duration), style: T.small),
+              ]),
+            ] else
+              SizedBox(
+                height: 90,
+                child: Center(
+                  child: _loading
+                      ? const CircularProgressIndicator(color: FP.red, strokeWidth: 2.5)
+                      : const Text('Esta sesión no tiene lecturas de ritmo cardíaco.', style: T.muted),
+                ),
+              ),
           ]),
         ),
+        if (hasHr) ...[
         gap(12),
         FpCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -230,6 +274,7 @@ class SessionDetailScreen extends StatelessWidget {
               ),
           ]),
         ),
+        ],
         if (s.steps > 0) ...[
           gap(12),
           FpCard(

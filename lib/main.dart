@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/splash_screen.dart';
+import 'services/local_store.dart';
 import 'state/app_state.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -12,8 +13,13 @@ void main() {
     systemNavigationBarColor: Colors.white,
     systemNavigationBarIconBrightness: Brightness.dark,
   ));
-  runApp(FitPulseApp(state: AppState()));
+  final store = await LocalStore.open();
+  runApp(FitPulseApp(state: AppState(store: store)));
 }
+
+/// Llave global del navegador: permite volver al login desde cualquier
+/// pantalla cuando la sesión expira.
+final navigatorKey = GlobalKey<NavigatorState>();
 
 class FitPulseApp extends StatelessWidget {
   const FitPulseApp({super.key, required this.state});
@@ -24,6 +30,7 @@ class FitPulseApp extends StatelessWidget {
         state: state,
         child: MaterialApp(
           title: 'FitPulse',
+          navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
           theme: buildFitPulseTheme(),
           home: const SplashScreen(),

@@ -6,9 +6,22 @@ import '../utils/format.dart';
 import '../widgets/common.dart';
 import 'profile_screen.dart';
 
-/// Figura 9: Notificaciones.
-class NotificationsScreen extends StatelessWidget {
+/// Figura 9: Notificaciones (GET /api/notifications).
+class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) AppScope.read(context).refreshNotices();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +33,7 @@ class NotificationsScreen extends StatelessWidget {
       title: 'Notificaciones',
       actions: [
         if (app.unreadCount > 0)
-          TextButton(onPressed: app.markAllRead, child: const Text('Marcar leídas', style: TextStyle(color: FP.red, fontWeight: FontWeight.w700))),
+          TextButton(onPressed: () => guardApi(context, app.markAllRead), child: const Text('Marcar leídas', style: TextStyle(color: FP.red, fontWeight: FontWeight.w700))),
         IconButton(
           tooltip: 'Preferencias',
           icon: const Icon(Icons.tune_rounded),
@@ -63,10 +76,7 @@ class _NoticeTile extends StatelessWidget {
       child: Dismissible(
         key: ValueKey(n.id),
         direction: DismissDirection.endToStart,
-        onDismissed: (_) {
-          app.removeNotice(n.id);
-          toast(context, 'Notificación eliminada', icon: Icons.delete_outline_rounded);
-        },
+        onDismissed: (_) => guardApi(context, () => app.removeNotice(n.id), success: 'Notificación eliminada', successIcon: Icons.delete_outline_rounded),
         background: Container(
           alignment: Alignment.centerRight,
           padding: const EdgeInsets.only(right: 22),
@@ -75,7 +85,7 @@ class _NoticeTile extends StatelessWidget {
         ),
         child: FpCard(
           color: n.read ? FP.card : FP.mintSoft,
-          onTap: () => app.markRead(n.id),
+          onTap: () => guardApi(context, () => app.markRead(n.id)),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             IconBadge(n.kind.icon, color: n.kind.color, background: Colors.white, size: 42),
             hgap(12),
