@@ -91,3 +91,18 @@ flutter test
 # Con el backend corriendo: recorre registro, metas, sesiones, wearable y notificaciones
 dart run tool/api_smoke.dart http://localhost:3000/api
 ```
+
+
+## Novedades 0.4.0
+
+- **Reportar un fallo** (Perfil → Reportar un fallo): formulario con tipo, gravedad, pantalla y descripción. Se guarda en el servidor como ticket (`FP-0001`) y muestra su estado y la respuesta del administrador.
+- **Buscador** (lupa en Inicio): usa el motor tipo Elasticsearch del backend (`/api/search`). Busca mientras escribes, tolera acentos y errores de dedo, resalta coincidencias y filtra por tipo.
+- **Widget de pantalla de inicio (Android)**: pasos de hoy, avance de la meta, calorías, ritmo y último entrenamiento. Mantén presionado el escritorio → *Widgets* → *FitPulse · Tu día*. Código nativo en `android/app/src/main/kotlin/.../FitPulseWidget.kt`; la app lo actualiza por el canal `fitpulse/widget` (`lib/services/home_widget_service.dart`).
+- Error visible en el inicio de sesión cuando la contraseña es incorrecta.
+- Las compilaciones de release se conectan al servidor en AWS (`ApiConfig.aws`):
+
+```bash
+flutter build apk --release
+# o con otra dirección:
+flutter build apk --release --dart-define=API_URL=http://IP-PUBLICA/api
+```

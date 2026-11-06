@@ -8,6 +8,7 @@ import '../api/api_config.dart';
 import '../api/fitpulse_api.dart';
 import '../data/models.dart';
 import '../data/repository.dart';
+import '../services/home_widget_service.dart';
 import '../services/local_store.dart';
 import '../utils/format.dart';
 import '../wearable/wearable_service.dart';
@@ -157,6 +158,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _clear() {
+    unawaited(HomeWidgetService.clear());
     signedIn = false;
     _repo = _apiRepo;
     user = UserProfile.empty();
@@ -205,8 +207,19 @@ class AppState extends ChangeNotifier {
     } finally {
       loading = false;
       notifyListeners();
+      unawaited(updateHomeWidget());
     }
   }
+
+  /// Manda el resumen del día al widget de la pantalla de inicio (Android).
+  Future<void> updateHomeWidget() => HomeWidgetService.update(
+        name: user.firstName,
+        steps: todaySteps,
+        stepGoal: user.dailyStepGoal,
+        calories: todayCalories,
+        heartRate: heartRate,
+        lastSession: lastSession == null ? null : '${lastSession!.type.label} · ${Fmt.duration(lastSession!.duration)}',
+      );
 
   Future<void> _refresh({bool goals = false, bool sessions = false, bool summary = false, bool devices = false, bool notices = true}) async {
     try {
@@ -269,6 +282,7 @@ class AppState extends ChangeNotifier {
     sessions.insert(0, saved);
     notifyListeners();
     await _refresh(goals: true, summary: true);
+    unawaited(updateHomeWidget());
     return saved;
   }
 

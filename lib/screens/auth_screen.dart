@@ -27,6 +27,8 @@ class _AuthScreenState extends State<AuthScreen> {
   final _pass2 = TextEditingController();
   bool _hide = true;
   bool _loading = false;
+  /// Último error de inicio de sesión o registro (p. ej. contraseña incorrecta).
+  String? _error;
   bool _terms = true;
 
   bool get _register => widget.register;
@@ -61,7 +63,7 @@ class _AuthScreenState extends State<AuthScreen> {
       toast(context, 'Acepta el aviso de privacidad para continuar', icon: Icons.info_rounded);
       return;
     }
-    setState(() => _loading = true);
+    setState(() { _loading = true; _error = null; });
     final app = AppScope.read(context);
     try {
       if (_register) {
@@ -79,7 +81,7 @@ class _AuthScreenState extends State<AuthScreen> {
       if (e.isNetwork) {
         _offerDemo(e.message);
       } else {
-        toast(context, e.message, icon: Icons.error_outline_rounded);
+        setState(() => _error = e.statusCode == 401 ? 'Correo o contraseña incorrectos. Revisa tus datos e inténtalo de nuevo.' : e.message);
       }
     }
   }
@@ -142,6 +144,7 @@ class _AuthScreenState extends State<AuthScreen> {
               gap(10),
               Wrap(spacing: 8, runSpacing: 8, children: [
                 ActionChip(label: const Text('Esta PC'), onPressed: () => ctrl.text = ApiConfig.platformDefault),
+                ActionChip(label: const Text('AWS'), onPressed: () => ctrl.text = ApiConfig.aws),
                 ActionChip(label: const Text('Render'), onPressed: () => ctrl.text = ApiConfig.production),
               ]),
               if (status != null) ...[
@@ -330,6 +333,19 @@ class _AuthScreenState extends State<AuthScreen> {
                   alignment: Alignment.centerRight,
                   child: TextButton(onPressed: _forgot, child: const Text('¿Olvidaste tu contraseña?', style: TextStyle(color: FP.muted))),
                 ),
+              if (_error != null) ...[
+                gap(8),
+                Container(
+                  key: const Key('auth-error'),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(color: FP.redSoft, borderRadius: BorderRadius.circular(12), border: Border.all(color: FP.red.withValues(alpha: .35))),
+                  child: Row(children: [
+                    const Icon(Icons.error_outline_rounded, color: FP.redDark, size: 20),
+                    hgap(10),
+                    Expanded(child: Text(_error!, style: T.small.copyWith(color: FP.redDark, fontWeight: FontWeight.w700))),
+                  ]),
+                ),
+              ],
               gap(14),
               FilledButton(
                 onPressed: _loading ? null : _submit,

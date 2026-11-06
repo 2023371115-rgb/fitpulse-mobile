@@ -72,5 +72,14 @@ class FitPulseApi {
 
   Future<void> deleteNotification(String id) => client.delete('/notifications/$id');
 
+  // ── Reportes de fallos (tickets) ──
+  Future<List<Json>> tickets() async => _list(((await client.get('/tickets')) as Json)['items']);
+
+  Future<Json> createTicket(Json ticket) async => ((await client.post('/tickets', ticket)) as Json)['ticket'] as Json;
+
+  // ── Búsqueda interna (motor tipo Elasticsearch del backend) ──
+  Future<Json> search(String q, {String? index, int size = 30}) async =>
+      (await client.get('/search', query: {'q': q, 'size': '$size', if (index != null) 'index': index})) as Json;
+
   static List<Json> _list(dynamic data) => (data as List).cast<Json>();
 }

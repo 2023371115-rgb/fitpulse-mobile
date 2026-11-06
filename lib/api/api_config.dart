@@ -5,7 +5,8 @@ import 'package:flutter/foundation.dart';
 /// Prioridad:
 /// 1. La que el usuario guardó en "Servidor" (pantalla de inicio de sesión).
 /// 2. `--dart-define=API_URL=...` al compilar.
-/// 3. Valor por defecto según la plataforma (backend corriendo en la misma PC):
+/// 3. En una compilación de release (APK para el teléfono): el servidor en AWS.
+/// 4. Valor por defecto según la plataforma (backend corriendo en la misma PC):
 ///    - Emulador de Android: http://10.0.2.2:3000/api (10.0.2.2 = la PC anfitriona)
 ///    - Windows, web, iOS: http://localhost:3000/api
 ///
@@ -16,11 +17,15 @@ class ApiConfig {
 
   static const fromDefine = String.fromEnvironment('API_URL');
 
-  /// Backend publicado en Render.
+  /// Backend, web y base de datos en AWS EC2.
+  static const aws = 'http://34.228.70.230/api';
+
+  /// Backend publicado anteriormente en Render.
   static const production = 'https://fitpulse-backend-r77o.onrender.com/api';
 
   static String get platformDefault {
     if (fromDefine.isNotEmpty) return fromDefine;
+    if (kReleaseMode) return aws;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) return 'http://10.0.2.2:3000/api';
     return 'http://localhost:3000/api';
   }

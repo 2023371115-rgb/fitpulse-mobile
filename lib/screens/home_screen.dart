@@ -7,6 +7,7 @@ import '../widgets/common.dart';
 import 'devices_screen.dart';
 import 'metrics_screen.dart';
 import 'notifications_screen.dart';
+import 'search_screen.dart';
 import 'sessions_screen.dart';
 
 /// Figura 3: Página principal ("Tu día").
@@ -40,6 +41,14 @@ class HomeScreen extends StatelessWidget {
                 const Text('Tu día', style: T.h1),
               ]),
             ),
+            FpCard(
+              color: FP.mint,
+              padding: const EdgeInsets.all(11),
+              radius: 14,
+              onTap: () => push(context, SearchScreen(onOpenActivity: onStartActivity, onOpenGoals: onOpenGoals)),
+              child: const Icon(Icons.search_rounded, color: FP.ink, size: 24),
+            ),
+            hgap(10),
             _BellButton(count: app.unreadCount, onTap: () => push(context, const NotificationsScreen())),
           ]),
           gap(4),

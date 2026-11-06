@@ -7,6 +7,7 @@ import '../widgets/common.dart';
 import 'auth_screen.dart';
 import 'devices_screen.dart';
 import 'notifications_screen.dart';
+import 'tickets_screen.dart';
 
 /// Figura 10: Perfil.
 class ProfileScreen extends StatelessWidget {
@@ -101,6 +102,7 @@ class ProfileScreen extends StatelessWidget {
           item('Dispositivos', Icons.watch_outlined, () => push(context, const DevicesScreen()), trailing: '${app.devices.length}'),
           item('Notificaciones', Icons.notifications_none_rounded, () => push(context, const NotificationsScreen()),
               trailing: app.unreadCount > 0 ? '${app.unreadCount} nuevas' : null),
+          item('Reportar un fallo', Icons.bug_report_outlined, () => push(context, const TicketsScreen())),
           item('Privacidad de datos', Icons.privacy_tip_outlined, () => push(context, const PrivacyScreen())),
           item('Acerca de FitPulse', Icons.info_outline_rounded, () => push(context, const AboutScreen())),
           gap(4),
