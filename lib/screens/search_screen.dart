@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
+import '../utils/perf_log.dart';
 import '../widgets/common.dart';
 import 'devices_screen.dart';
 import 'metrics_screen.dart';
@@ -83,7 +84,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final seq = ++_seq;
     setState(() { _loading = true; _error = null; });
     try {
-      final res = await app.api.search(q, index: _filter);
+      final res = await PerfLog.op('buscar', () => app.api.search(q, index: _filter));
       if (!mounted || seq != _seq) return; // llegó una búsqueda más nueva
       setState(() {
         _res = res;

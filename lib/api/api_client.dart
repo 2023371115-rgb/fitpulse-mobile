@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import '../utils/perf_log.dart';
+
 /// Error de la API con un mensaje listo para mostrar al usuario.
 class ApiException implements Exception {
   ApiException(this.message, {this.statusCode});
@@ -64,6 +66,7 @@ class ApiClient {
     final uri = _uri(path, query);
     final encoded = body == null ? null : jsonEncode(body);
     http.Response res;
+    final sw = Stopwatch()..start();
     try {
       final future = switch (method) {
         'GET' => _http.get(uri, headers: _headers),
@@ -74,14 +77,19 @@ class ApiClient {
       };
       res = await future.timeout(timeout);
     } on TimeoutException {
+      PerfLog.httpError(method, path, 'timeout', sw.elapsedMilliseconds);
       throw ApiException('El servidor tardó demasiado en responder. Intenta de nuevo.');
     } on SocketException {
+      PerfLog.httpError(method, path, 'socket', sw.elapsedMilliseconds);
       throw ApiException('No se pudo conectar con el servidor. Revisa tu conexión.');
     } on http.ClientException {
+      PerfLog.httpError(method, path, 'cliente', sw.elapsedMilliseconds);
       throw ApiException('No se pudo conectar con el servidor. Revisa tu conexión.');
     } on HandshakeException {
+      PerfLog.httpError(method, path, 'tls', sw.elapsedMilliseconds);
       throw ApiException('No se pudo establecer una conexión segura con el servidor.');
     }
+    final netMs = sw.elapsedMilliseconds;
 
     dynamic data;
     if (res.body.isNotEmpty) {
@@ -91,6 +99,7 @@ class ApiClient {
         data = null;
       }
     }
+    PerfLog.http(method, path, res.statusCode, netMs, sw.elapsedMilliseconds - netMs, res.bodyBytes.length);
 
     if (res.statusCode >= 200 && res.statusCode < 300) return data;
 

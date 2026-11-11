@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
+import '../utils/perf_log.dart';
 import '../widgets/common.dart';
 import 'activity_screen.dart';
 import 'auth_screen.dart';
@@ -19,7 +20,10 @@ class _ShellState extends State<Shell> {
   int _index = 0;
   AppState? _app;
 
-  void _go(int i) => setState(() => _index = i);
+  void _go(int i) {
+    PerfLog.event('pestaña $_index→$i');
+    setState(() => _index = i);
+  }
 
   @override
   void didChangeDependencies() {

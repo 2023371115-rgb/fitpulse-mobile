@@ -11,6 +11,7 @@ import '../data/repository.dart';
 import '../services/home_widget_service.dart';
 import '../services/local_store.dart';
 import '../utils/format.dart';
+import '../utils/perf_log.dart';
 import '../wearable/wearable_service.dart';
 
 /// Estado global de la app.
@@ -182,7 +183,9 @@ class AppState extends ChangeNotifier {
   // ───────── Carga de datos ─────────
 
   /// Descarga todo lo necesario para las pantallas principales.
-  Future<void> refreshAll() async {
+  Future<void> refreshAll() => PerfLog.op('cargar_todo', _refreshAll);
+
+  Future<void> _refreshAll() async {
     loading = true;
     loadError = null;
     notifyListeners();
@@ -277,7 +280,9 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  Future<Session> addSession(Session s) async {
+  Future<Session> addSession(Session s) => PerfLog.op('registrar_sesion', () => _addSession(s));
+
+  Future<Session> _addSession(Session s) async {
     final saved = await _repo.createSession(s);
     sessions.insert(0, saved);
     notifyListeners();
