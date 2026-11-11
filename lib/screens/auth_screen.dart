@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
+import '../utils/validators.dart';
 import '../widgets/common.dart';
 import 'shell.dart';
 
@@ -39,21 +40,6 @@ class _AuthScreenState extends State<AuthScreen> {
       c.dispose();
     }
     super.dispose();
-  }
-
-  String? _validateEmail(String? v) {
-    final t = (v ?? '').trim();
-    if (t.isEmpty) return 'Escribe tu correo electrónico';
-    if (t.length > 120) return 'Máximo 120 caracteres';
-    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(t)) return 'Correo no válido';
-    return null;
-  }
-
-  String? _validatePass(String? v) {
-    if ((v ?? '').trim().isEmpty) return 'Escribe tu contraseña';
-    if (v!.length < 8) return 'Mínimo 8 caracteres';
-    if (v.length > 72) return 'Máximo 72 caracteres';
-    return null;
   }
 
   Future<void> _submit() async {
@@ -291,7 +277,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 autocorrect: false,
                 inputFormatters: [LengthLimitingTextInputFormatter(120), FilteringTextInputFormatter.deny(RegExp(r'\s'))],
                 decoration: _dec('Correo electrónico', Icons.mail_outline_rounded),
-                validator: _validateEmail,
+                validator: Validators.email,
               ),
               gap(),
               TextFormField(
@@ -302,7 +288,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 inputFormatters: [LengthLimitingTextInputFormatter(72)],
                 textInputAction: _register ? TextInputAction.next : TextInputAction.done,
                 decoration: _dec('Contraseña', Icons.lock_outline_rounded, suffix: eye),
-                validator: _validatePass,
+                validator: Validators.password,
                 onFieldSubmitted: (_) => _register ? null : _submit(),
               ),
               if (_register) ...[
@@ -391,11 +377,7 @@ class _PasswordStrength extends StatelessWidget {
         valueListenable: controller,
         builder: (_, v, __) {
           final p = v.text;
-          var score = 0;
-          if (p.length >= 8) score++;
-          if (RegExp(r'[A-Z]').hasMatch(p)) score++;
-          if (RegExp(r'[0-9]').hasMatch(p)) score++;
-          if (RegExp(r'[^A-Za-z0-9]').hasMatch(p)) score++;
+          final score = Validators.passwordScore(p);
           const labels = ['Muy débil', 'Débil', 'Aceptable', 'Buena', 'Fuerte'];
           final colors = [FP.track, FP.redDark, FP.amber, FP.green, FP.green];
           return Row(children: [

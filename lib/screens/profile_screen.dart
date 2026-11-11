@@ -8,6 +8,7 @@ import 'auth_screen.dart';
 import 'devices_screen.dart';
 import 'notifications_screen.dart';
 import 'tickets_screen.dart';
+import '../utils/validators.dart';
 
 /// Figura 10: Perfil.
 class ProfileScreen extends StatelessWidget {
@@ -154,15 +155,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   bool _saving = false;
 
-  /// Peso, estatura y edad son opcionales; si se escriben deben estar en rango.
-  String? _range(String? v, num lo, num hi, String what, {bool optional = false}) {
-    if (optional && (v ?? '').trim().isEmpty) return null;
-    final n = num.tryParse(v ?? '');
-    if (n == null) return 'Escribe tu $what';
-    if (n < lo || n > hi) return 'Valor entre $lo y $hi';
-    return null;
-  }
-
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
@@ -216,15 +208,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           Row(children: [
             Expanded(
               child: field(_weight, 'Peso', suffix: 'kg', type: const TextInputType.numberWithOptions(decimal: true),
-                  fmt: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], validator: (v) => _range(v, 30, 250, 'peso', optional: true)),
+                  fmt: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], validator: (v) => Validators.range(v, 30, 250, 'peso', optional: true)),
             ),
             hgap(10),
-            Expanded(child: field(_height, 'Estatura', suffix: 'cm', type: TextInputType.number, fmt: digits, validator: (v) => _range(v, 100, 230, 'estatura', optional: true))),
+            Expanded(child: field(_height, 'Estatura', suffix: 'cm', type: TextInputType.number, fmt: digits, validator: (v) => Validators.range(v, 100, 230, 'estatura', optional: true))),
           ]),
           Row(children: [
-            Expanded(child: field(_age, 'Edad', suffix: 'años', type: TextInputType.number, fmt: digits, validator: (v) => _range(v, 12, 100, 'edad', optional: true))),
+            Expanded(child: field(_age, 'Edad', suffix: 'años', type: TextInputType.number, fmt: digits, validator: (v) => Validators.range(v, 12, 100, 'edad', optional: true))),
             hgap(10),
-            Expanded(child: field(_steps, 'Meta diaria', suffix: 'pasos', type: TextInputType.number, fmt: digits, validator: (v) => _range(v, 1000, 50000, 'meta'))),
+            Expanded(child: field(_steps, 'Meta diaria', suffix: 'pasos', type: TextInputType.number, fmt: digits, validator: (v) => Validators.range(v, 1000, 50000, 'meta'))),
           ]),
           gap(4),
           const Text('Tu peso y estatura se usan para estimar calorías y distancia.', style: T.small),
