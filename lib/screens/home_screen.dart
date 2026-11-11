@@ -116,7 +116,11 @@ class HomeScreen extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(children: [
                       const Expanded(child: Text('Ritmo cardíaco', style: T.muted)),
-                      if (hr != null) BeatingHeart(bpm: hr, size: 18) else const Icon(Icons.favorite_border_rounded, color: FP.subtle, size: 18),
+                      // Solo late con lecturas de hoy (dato "en vivo"); con el último valor histórico el
+                      // corazón queda fijo y la pantalla deja de redibujarse 60 veces por segundo.
+                      if (hr != null && app.summary.hrToday.isNotEmpty) BeatingHeart(bpm: hr, size: 18)
+                      else if (hr != null) const Icon(Icons.favorite_rounded, color: FP.red, size: 18)
+                      else const Icon(Icons.favorite_border_rounded, color: FP.subtle, size: 18),
                     ]),
                     gap(6),
                     _BigValue(value: hr == null ? '--' : '$hr', unit: 'bpm', color: FP.red),

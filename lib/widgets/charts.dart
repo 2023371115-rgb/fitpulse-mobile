@@ -403,13 +403,16 @@ class _BeatingHeartState extends State<BeatingHeart> with SingleTickerProviderSt
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-        animation: _c,
-        builder: (_, child) {
-          final v = _c.value;
-          final s = v < .15 ? 1 + v / .15 * .22 : v < .3 ? 1.22 - (v - .15) / .15 * .22 : 1.0;
-          return Transform.scale(scale: s, child: child);
-        },
-        child: Icon(Icons.favorite_rounded, color: widget.color, size: widget.size),
+  // RepaintBoundary: cada cuadro de la animación repinta solo el ícono, no la tarjeta completa.
+  Widget build(BuildContext context) => RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _c,
+          builder: (_, child) {
+            final v = _c.value;
+            final s = v < .15 ? 1 + v / .15 * .22 : v < .3 ? 1.22 - (v - .15) / .15 * .22 : 1.0;
+            return Transform.scale(scale: s, child: child);
+          },
+          child: Icon(Icons.favorite_rounded, color: widget.color, size: widget.size),
+        ),
       );
 }

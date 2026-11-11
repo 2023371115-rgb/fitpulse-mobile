@@ -50,11 +50,17 @@ class _ShellState extends State<Shell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // IndexedStack conserva las 4 pestañas vivas (no se pierde el estado al cambiar), pero sus
+      // animaciones seguían corriendo aunque no se vieran. TickerMode las pausa fuera de pantalla
+      // (Práctica 12: la app redibujaba ~46 cuadros/s sin parar y usaba ~61 % de un núcleo).
       body: IndexedStack(index: _index, children: [
-        HomeScreen(onStartActivity: () => _go(1), onOpenGoals: () => _go(2)),
-        const ActivityScreen(),
-        const GoalsScreen(),
-        const ProfileScreen(),
+        for (final (i, tab) in [
+          HomeScreen(onStartActivity: () => _go(1), onOpenGoals: () => _go(2)),
+          const ActivityScreen(),
+          const GoalsScreen(),
+          const ProfileScreen(),
+        ].indexed)
+          TickerMode(enabled: i == _index, child: tab),
       ]),
       bottomNavigationBar: DecoratedBox(
         decoration: const BoxDecoration(border: Border(top: BorderSide(color: FP.border))),
