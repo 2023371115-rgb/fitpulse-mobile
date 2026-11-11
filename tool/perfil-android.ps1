@@ -52,12 +52,22 @@ A shell am force-stop $Pkg | Out-Null
 A logcat -c | Out-Null
 A shell dumpsys gfxinfo $Pkg reset | Out-Null
 Start-Sleep -Seconds 1
-$start = (A shell am start -W -n "$Pkg/.MainActivity") -join "`n"
-$cold = [regex]::Match($start, 'TotalTime:\s+(\d+)').Groups[1].Value
+A logcat -b events,main -c | Out-Null
+$start = (& $Adb shell am start -W -n "$Pkg/.MainActivity" 2>&1) -join "`n"
+Set-Content -Path (Join-Path $dir 'arranque.txt') -Value $start -Encoding UTF8
+$cold = [regex]::Match($start, '(?:TotalTime|WaitTime):\s+(\d+)').Groups[1].Value
+if (-not $cold) {
+  # Algunos teléfonos no imprimen TotalTime: se toma la línea "Displayed …: +1s234ms" del sistema
+  Start-Sleep -Seconds 2
+  $disp = (A logcat -d -s ActivityTaskManager:I ActivityManager:I) -join "`n"
+  $m = [regex]::Match($disp, 'Displayed [^:]*' + [regex]::Escape($Pkg) + '[^:]*: \+(?:(\d+)s)?(\d+)ms')
+  if ($m.Success) { $cold = [string]([int]('0' + $m.Groups[1].Value) * 1000 + [int]$m.Groups[2].Value) }
+  else { $cold = 'no disponible' }
+}
 Start-Sleep -Seconds 2
 $appPid = ((A shell pidof $Pkg) -join '').Trim()
 if (-not $appPid) { Log 'La app no arrancó (pidof vacío).'; exit 1 }
-Log "Arranque en frío (am start -W TotalTime): $cold ms · pid $appPid"
+Log "Arranque en frío (am start -W / Displayed): $cold ms · pid $appPid"
 
 # 2. Muestreo de CPU/RES y captura de logcat en segundo plano
 $topFile = Join-Path $dir 'top.txt'
