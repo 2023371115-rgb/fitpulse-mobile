@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -145,6 +146,10 @@ class _NewTicketScreenState extends State<NewTicketScreen> {
   late String _screen = widget.screen ?? 'Inicio';
   bool _sending = false;
   String? _error;
+  // Clave de idempotencia del reporte. Se conserva mientras el contenido no cambie, así un
+  // segundo "Enviar" tras un error de red no crea un reporte duplicado.
+  String? _idemKey;
+  String? _idemBody;
 
   @override
   void dispose() {
@@ -158,7 +163,7 @@ class _NewTicketScreenState extends State<NewTicketScreen> {
     if (!_form.currentState!.validate()) return;
     setState(() { _sending = true; _error = null; });
     try {
-      final ticket = await AppScope.read(context).api.createTicket({
+      final body = {
         'title': _title.text.trim(),
         'description': _desc.text.trim(),
         'category': _category,
@@ -167,7 +172,10 @@ class _NewTicketScreenState extends State<NewTicketScreen> {
         'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
         'app_version': appVersion,
         'device_info': 'FitPulse $appVersion · ${kIsWeb ? 'navegador' : defaultTargetPlatform.name}',
-      });
+      };
+      final encoded = jsonEncode(body);
+      if (_idemBody != encoded) { _idemKey = ApiClient.newIdempotencyKey(); _idemBody = encoded; }
+      final ticket = await AppScope.read(context).api.createTicket(body, idempotencyKey: _idemKey);
       if (mounted) Navigator.pop(context, ticket);
     } on ApiException catch (e) {
       // No se cierra la pantalla: el usuario no pierde lo que escribió.

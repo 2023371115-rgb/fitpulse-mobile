@@ -36,7 +36,7 @@ abstract class FitPulseRepository {
 
   Future<List<Session>> sessions();
   Future<Session> session(String id);
-  Future<Session> createSession(Session session);
+  Future<Session> createSession(Session session, {String? idempotencyKey});
   Future<void> deleteSession(String id);
 
   Future<ActivitySummary> summary({bool month = false});
@@ -133,7 +133,8 @@ class ApiRepository implements FitPulseRepository {
   Future<Session> session(String id) async => Session.fromJson(await api.session(id));
 
   @override
-  Future<Session> createSession(Session session) async => Session.fromJson(await api.createSession(session.toApi()));
+  Future<Session> createSession(Session session, {String? idempotencyKey}) async =>
+      Session.fromJson(await api.createSession(session.toApi(), idempotencyKey: idempotencyKey));
 
   @override
   Future<void> deleteSession(String id) => api.deleteSession(id);
@@ -304,7 +305,7 @@ class DemoRepository implements FitPulseRepository {
   Future<Session> session(String id) => _later(_sessions.firstWhere((s) => s.id == id));
 
   @override
-  Future<Session> createSession(Session s) async {
+  Future<Session> createSession(Session s, {String? idempotencyKey}) async {
     final saved = Session(
       id: _id('s'),
       type: s.type,

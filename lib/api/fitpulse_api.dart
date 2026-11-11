@@ -43,7 +43,8 @@ class FitPulseApi {
 
   Future<Json> session(String id) async => (await client.get('/sessions/$id')) as Json;
 
-  Future<Json> createSession(Json session) async => (await client.post('/sessions', session)) as Json;
+  Future<Json> createSession(Json session, {String? idempotencyKey}) async =>
+      (await client.post('/sessions', session, idempotencyKey)) as Json;
 
   Future<void> deleteSession(String id) => client.delete('/sessions/$id');
 
@@ -75,7 +76,8 @@ class FitPulseApi {
   // ── Reportes de fallos (tickets) ──
   Future<List<Json>> tickets() async => _list(((await client.get('/tickets')) as Json)['items']);
 
-  Future<Json> createTicket(Json ticket) async => ((await client.post('/tickets', ticket)) as Json)['ticket'] as Json;
+  Future<Json> createTicket(Json ticket, {String? idempotencyKey}) async =>
+      ((await client.post('/tickets', ticket, idempotencyKey)) as Json)['ticket'] as Json;
 
   // ── Búsqueda interna (motor tipo Elasticsearch del backend) ──
   Future<Json> search(String q, {String? index, int size = 30}) async =>

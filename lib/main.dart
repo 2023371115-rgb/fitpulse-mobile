@@ -4,7 +4,7 @@ import 'screens/splash_screen.dart';
 import 'services/local_store.dart';
 import 'state/app_state.dart';
 import 'theme/app_theme.dart';
-import 'utils/perf_log.dart';
+import 'utils/perf_frames.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,7 +16,7 @@ Future<void> main() async {
   ));
   final store = await LocalStore.open();
   runApp(FitPulseApp(state: AppState(store: store)));
-  PerfLog.start();
+  PerfFrames.start();
 }
 
 /// Llave global del navegador: permite volver al login desde cualquier

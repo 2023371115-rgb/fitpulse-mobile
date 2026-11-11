@@ -287,11 +287,13 @@ class ActivitySummaryScreen extends StatefulWidget {
 
 class _ActivitySummaryScreenState extends State<ActivitySummaryScreen> {
   bool _saving = false;
+  // Una clave por actividad: si el guardado falla y se reintenta, el servidor no la duplica.
+  final _idempotencyKey = ApiClient.newIdempotencyKey();
 
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await AppScope.read(context).addSession(widget.session);
+      await AppScope.read(context).addSession(widget.session, idempotencyKey: _idempotencyKey);
       if (mounted) Navigator.pop(context, true);
     } on ApiException catch (e) {
       if (!mounted) return;

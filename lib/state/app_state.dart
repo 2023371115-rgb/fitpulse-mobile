@@ -280,10 +280,13 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  Future<Session> addSession(Session s) => PerfLog.op('registrar_sesion', () => _addSession(s));
+  /// [idempotencyKey]: la misma en cada intento de guardar esta sesión, para que un reintento
+  /// (automático o porque el usuario volvió a presionar Guardar) no la registre dos veces.
+  Future<Session> addSession(Session s, {String? idempotencyKey}) =>
+      PerfLog.op('registrar_sesion', () => _addSession(s, idempotencyKey));
 
-  Future<Session> _addSession(Session s) async {
-    final saved = await _repo.createSession(s);
+  Future<Session> _addSession(Session s, String? idempotencyKey) async {
+    final saved = await _repo.createSession(s, idempotencyKey: idempotencyKey);
     sessions.insert(0, saved);
     notifyListeners();
     await _refresh(goals: true, summary: true);
