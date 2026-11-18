@@ -13,6 +13,8 @@
 #                       de persistencia (todo lo que está en test/), con cobertura.
 #   2. integracion-api  levanta MariaDB y el backend real (repositorio fitpulse-backend) y
 #                       prueba la app contra esa API (test/api_real_test.dart).
+#   3. pruebas-api      corre las pruebas automatizadas del backend (node --test) contra una
+#                       MariaDB temporal: así el pipeline de la app también valida su API.
 # Nota: PowerShell 5 lee los scripts de cada paso como ANSI; los textos con acentos van en
 # variables de entorno (CI_TITLE), no dentro de run:.
 # Si una prueba falla, el job falla, el commit/PR queda en rojo y la anotación indica
@@ -154,3 +156,42 @@ jobs:
             api-results.json
             api.log
           if-no-files-found: ignore
+
+  pruebas-api:
+    name: Pruebas de la API (node --test + MariaDB)
+    runs-on: [self-hosted, Windows]
+    timeout-minutes: 20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3307"
+      DB_USER: root
+      DB_PASSWORD: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Código del backend (fitpulse-backend)
+        uses: actions/checkout@v4
+        with:
+          repository: 2023371115-rgb/fitpulse-backend
+          ref: unidad3-nube
+          path: backend
+
+      - name: MariaDB temporal + pruebas automatizadas de la API
+        run: |
+          .\.github\scripts\mariadb-windows.ps1 -Port 3307
+          if (-not $?) { exit 1 }
+          Push-Location backend
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmd /c "node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=..\api-test-results.xml tests/*.test.js"
+          $code = $LASTEXITCODE
+          Pop-Location
+          $pidFile = "$env:RUNNER_TEMP\mariadb.pid"
+          if (Test-Path $pidFile) { Stop-Process -Id ([int](Get-Content $pidFile)) -Force -ErrorAction SilentlyContinue }
+          exit $code
+
+      - name: Resumen de resultados
+        if: always()
+        env:
+          CI_TITLE: Pruebas de la API (node --test)
+        run: node .github/scripts/ci_report.js junit api-test-results.xml
