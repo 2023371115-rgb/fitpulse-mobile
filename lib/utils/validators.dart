@@ -29,7 +29,8 @@ class Validators {
   static String? range(String? v, num lo, num hi, String what, {bool optional = false}) {
     if (optional && (v ?? '').trim().isEmpty) return null;
     final n = num.tryParse(v ?? '');
-    if (n == null) return 'Escribe tu $what';
+    // num.tryParse acepta "NaN" e "Infinity"; NaN no es menor ni mayor que nada (D-08)
+    if (n == null || n.isNaN) return 'Escribe tu $what';
     if (n < lo || n > hi) return 'Valor entre $lo y $hi';
     return null;
   }

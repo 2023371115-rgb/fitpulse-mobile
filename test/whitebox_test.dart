@@ -83,9 +83,9 @@ void main() {
     test('L4 espacios alrededor de un número válido', () {
       expect(Validators.range(' 70 ', 30, 250, 'peso'), isNull);
     });
-    test('D-08 "NaN" no debería aceptarse como número', () {
+    test('D-08 (corregido) "NaN" no se acepta como número', () {
       expect(Validators.range('NaN', 30, 250, 'peso'), isNotNull);
-    }, skip: 'Defecto D-08: num.tryParse("NaN") devuelve NaN y ninguna comparación con NaN es verdadera');
+    });
   });
 
   group('M1b Validators.email / password / passwordScore', () {
@@ -133,9 +133,9 @@ void main() {
     });
     test('L2 redondeo que agrega un dígito (999.6 → 1,000)', () => expect(Fmt.number(999.6), '1,000'));
     test('L3 cero', () => expect(Fmt.number(0), '0'));
-    test('D-09 un negativo que redondea a cero no debería mostrar "-0"', () {
+    test('D-09 (corregido) un negativo que redondea a cero muestra "0"', () {
       expect(Fmt.number(-0.4), '0');
-    }, skip: 'Defecto D-09: se revisa value < 0 antes de redondear y devuelve "-0"');
+    });
   });
 
   group('M2b Fmt.pace', () {
@@ -257,9 +257,9 @@ void main() {
       await expectLater(client((_) => throw const HandshakeException('bad cert')).get('/x'),
           throwsA(_apiError(status: null, message: 'No se pudo establecer una conexión segura con el servidor.')));
     });
-    test('D-07 una URL de servidor mal escrita debería dar ApiException', () async {
+    test('D-07 (corregido) una URL de servidor mal escrita da ApiException', () async {
       final api = ApiClient(baseUrl: 'http://[mal', httpClient: rec.client((_) async => _json({}, 200)));
       await expectLater(api.get('/x'), throwsA(isA<ApiException>()));
-    }, skip: 'Defecto D-07: Uri.parse se ejecuta antes del try y la FormatException llega sin convertir a la pantalla');
+    });
   });
 }

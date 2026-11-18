@@ -1,0 +1,197 @@
+# Prácticas 13 y 14 · Integración continua de la app móvil FitPulse (Flutter).
+#
+# Se ejecuta en cada push a cualquier rama, en cada pull request y a mano (Actions → Run workflow).
+#
+# Runner: self-hosted en la laptop de desarrollo (Windows 11, Flutter y Node instalados).
+# Los runners de GitHub no arrancan para esta cuenta por un bloqueo de facturación
+# ("The job was not started because your account is locked due to a billing issue"),
+# así que los jobs corren en un runner propio registrado en Settings → Actions → Runners.
+# Cuando el bloqueo se quite, basta cambiar runs-on por ubuntu-latest y usar la variante
+# con MariaDB como service container (ver el historial del archivo, commit b723eca).
+#
+#   1. pruebas          análisis estático + pruebas unitarias, de integración, de interfaz y
+#                       de persistencia (todo lo que está en test/), con cobertura.
+#   2. integracion-api  levanta MariaDB y el backend real (repositorio fitpulse-backend) y
+#                       prueba la app contra esa API (test/api_real_test.dart).
+#   3. pruebas-api      corre las pruebas automatizadas del backend (node --test) contra una
+#                       MariaDB temporal: así el pipeline de la app también valida su API.
+# Nota: PowerShell 5 lee los scripts de cada paso como ANSI; los textos con acentos van en
+# variables de entorno (CI_TITLE), no dentro de run:.
+# Si una prueba falla, el job falla, el commit/PR queda en rojo y la anotación indica
+# archivo, línea y mensaje de la prueba.
+name: CI app móvil
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # PowerShell de Windows sin perfil y sin bloqueo de scripts (la política por defecto los
+    # impide); el paso falla si el último programa terminó con código distinto de 0.
+    # (El runner arma este comando con String.Format: no se pueden usar llaves aparte de {0}.)
+    shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'; exit $LASTEXITCODE"
+
+jobs:
+  pruebas:
+    name: Análisis y pruebas de la app
+    runs-on: [self-hosted, Windows]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Herramientas del runner
+        run: |
+          flutter --version
+          node --version
+
+      - name: Dependencias
+        run: flutter pub get
+
+      - name: Análisis estático (flutter analyze)
+        run: flutter analyze --no-fatal-infos
+
+      - name: Pruebas unitarias, integración, interfaz y persistencia
+        shell: cmd
+        run: flutter test --machine --coverage > test-results.json
+
+      - name: Resumen de resultados
+        if: always()
+        env:
+          CI_TITLE: Pruebas de la app (flutter test)
+        run: node .github/scripts/ci_report.js flutter test-results.json
+
+      - name: Cobertura
+        if: always()
+        run: |
+          if (Test-Path coverage/lcov.info) {
+            $lf = 0; $lh = 0
+            Get-Content coverage/lcov.info | ForEach-Object { if ($_ -match '^LF:(\d+)') { $lf += [int]$Matches[1] } elseif ($_ -match '^LH:(\d+)') { $lh += [int]$Matches[1] } }
+            $line = "Cobertura de lineas: {0:N1} % ({1} de {2})" -f (100 * $lh / [math]::Max($lf, 1)), $lh, $lf
+            Write-Host $line
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $line -Encoding utf8
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true   # la cuota de artefactos de la cuenta está bloqueada (facturación)
+        with:
+          name: resultados-app
+          path: |
+            test-results.json
+            coverage/lcov.info
+          if-no-files-found: ignore
+
+  integracion-api:
+    name: Integración app ↔ API real (Node + MariaDB)
+    runs-on: [self-hosted, Windows]
+    timeout-minutes: 30
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3307"
+      DB_USER: root
+      DB_PASSWORD: ""
+      DB_NAME: fitpulse_ci
+      JWT_SECRET: ci-secreto-de-prueba
+      PORT: "3077"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Código del backend (fitpulse-backend)
+        uses: actions/checkout@v4
+        with:
+          repository: 2023371115-rgb/fitpulse-backend
+          ref: unidad3-nube
+          path: backend
+
+      # Un solo paso: en Windows el runner termina, al acabar cada paso, todos los procesos que
+      # ese paso dejó vivos (Job Object), así que MariaDB y la API deben vivir en el mismo paso
+      # que las pruebas. Al final se detienen aquí mismo.
+      - name: MariaDB temporal + API real + pruebas de la app contra ella
+        run: |
+          .\.github\scripts\mariadb-windows.ps1 -Port 3307
+          if (-not $?) { exit 1 }
+          Push-Location backend
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          node migrate.js
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $api = Start-Process -FilePath node -ArgumentList 'server.js' -RedirectStandardOutput ..\api.log -RedirectStandardError ..\api.err -WindowStyle Hidden -PassThru
+          Pop-Location
+          $ok = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            try { $r = Invoke-RestMethod http://127.0.0.1:3077/api/health -TimeoutSec 2; Write-Host "API lista: $($r.name) $($r.version)"; $ok = $true; break } catch { Start-Sleep -Seconds 1 }
+          }
+          if (-not $ok) { Write-Host "::error::La API no respondio en 30 s"; Get-Content api.log, api.err -ErrorAction SilentlyContinue; exit 1 }
+          flutter pub get
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmd /c "flutter test test/api_real_test.dart --machine --dart-define=API_URL=http://127.0.0.1:3077/api > api-results.json"
+          $code = $LASTEXITCODE
+          Stop-Process -Id $api.Id -Force -ErrorAction SilentlyContinue
+          $pidFile = "$env:RUNNER_TEMP\mariadb.pid"
+          if (Test-Path $pidFile) { Stop-Process -Id ([int](Get-Content $pidFile)) -Force -ErrorAction SilentlyContinue }
+          exit $code
+
+      - name: Resumen de resultados
+        if: always()
+        env:
+          CI_TITLE: Integración app ↔ API real
+        run: node .github/scripts/ci_report.js flutter api-results.json
+
+      - name: Registro de la API
+        if: always()
+        run: Get-Content api.log, api.err -Tail 60 -ErrorAction SilentlyContinue
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true   # la cuota de artefactos de la cuenta está bloqueada (facturación)
+        with:
+          name: resultados-integracion
+          path: |
+            api-results.json
+            api.log
+          if-no-files-found: ignore
+
+  pruebas-api:
+    name: Pruebas de la API (node --test + MariaDB)
+    runs-on: [self-hosted, Windows]
+    timeout-minutes: 20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3307"
+      DB_USER: root
+      DB_PASSWORD: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Código del backend (fitpulse-backend)
+        uses: actions/checkout@v4
+        with:
+          repository: 2023371115-rgb/fitpulse-backend
+          ref: unidad3-nube
+          path: backend
+
+      - name: MariaDB temporal + pruebas automatizadas de la API
+        run: |
+          .\.github\scripts\mariadb-windows.ps1 -Port 3307
+          if (-not $?) { exit 1 }
+          Push-Location backend
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmd /c "node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=..\api-test-results.xml tests/*.test.js"
+          $code = $LASTEXITCODE
+          Pop-Location
+          $pidFile = "$env:RUNNER_TEMP\mariadb.pid"
+          if (Test-Path $pidFile) { Stop-Process -Id ([int](Get-Content $pidFile)) -Force -ErrorAction SilentlyContinue }
+          exit $code
+
+      - name: Resumen de resultados
+        if: always()
+        env:
+          CI_TITLE: Pruebas de la API (node --test)
+        run: node .github/scripts/ci_report.js junit api-test-results.xml
