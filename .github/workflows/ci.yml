@@ -13,6 +13,8 @@
 #                       de persistencia (todo lo que está en test/), con cobertura.
 #   2. integracion-api  levanta MariaDB y el backend real (repositorio fitpulse-backend) y
 #                       prueba la app contra esa API (test/api_real_test.dart).
+# Nota: PowerShell 5 lee los scripts de cada paso como ANSI; los textos con acentos van en
+# variables de entorno (CI_TITLE), no dentro de run:.
 # Si una prueba falla, el job falla, el commit/PR queda en rojo y la anotación indica
 # archivo, línea y mensaje de la prueba.
 name: CI app móvil
@@ -58,7 +60,9 @@ jobs:
 
       - name: Resumen de resultados
         if: always()
-        run: node .github/scripts/ci_report.js flutter test-results.json "Pruebas de la app (flutter test)"
+        env:
+          CI_TITLE: Pruebas de la app (flutter test)
+        run: node .github/scripts/ci_report.js flutter test-results.json
 
       - name: Cobertura
         if: always()
@@ -66,7 +70,7 @@ jobs:
           if (Test-Path coverage/lcov.info) {
             $lf = 0; $lh = 0
             Get-Content coverage/lcov.info | ForEach-Object { if ($_ -match '^LF:(\d+)') { $lf += [int]$Matches[1] } elseif ($_ -match '^LH:(\d+)') { $lh += [int]$Matches[1] } }
-            $line = "Cobertura de líneas: {0:N1} % ({1} de {2})" -f (100 * $lh / [math]::Max($lf, 1)), $lh, $lf
+            $line = "Cobertura de lineas: {0:N1} % ({1} de {2})" -f (100 * $lh / [math]::Max($lf, 1)), $lh, $lf
             Write-Host $line
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $line -Encoding utf8
           }
@@ -113,6 +117,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           node migrate.js
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          $env:RUNNER_TRACKING_ID = ''   # que el runner no la termine al acabar este paso
           $api = Start-Process -FilePath node -ArgumentList 'server.js' -RedirectStandardOutput ..\api.log -RedirectStandardError ..\api.err -WindowStyle Hidden -PassThru
           $api.Id | Out-File -Encoding ascii ..\api.pid
           for ($i = 0; $i -lt 30; $i++) {
@@ -129,7 +134,9 @@ jobs:
 
       - name: Resumen de resultados
         if: always()
-        run: node .github/scripts/ci_report.js flutter api-results.json "Integración app ↔ API real"
+        env:
+          CI_TITLE: Integración app ↔ API real
+        run: node .github/scripts/ci_report.js flutter api-results.json
 
       - name: Registro de la API
         if: always()
