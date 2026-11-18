@@ -30,7 +30,8 @@ defaults:
   run:
     # PowerShell de Windows sin perfil y sin bloqueo de scripts (la política por defecto los
     # impide); el paso falla si el último programa terminó con código distinto de 0.
-    shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& { . '{0}'; if ($LASTEXITCODE) { exit $LASTEXITCODE } }"
+    # (El runner arma este comando con String.Format: no se pueden usar llaves aparte de {0}.)
+    shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'; exit $LASTEXITCODE"
 
 jobs:
   pruebas:
