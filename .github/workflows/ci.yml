@@ -107,30 +107,33 @@ jobs:
           ref: unidad3-nube
           path: backend
 
-      - name: Base de datos de prueba (MariaDB temporal)
-        run: .\.github\scripts\mariadb-windows.ps1 -Port 3307
-
-      - name: Instalar y arrancar la API
-        working-directory: backend
+      # Un solo paso: en Windows el runner termina, al acabar cada paso, todos los procesos que
+      # ese paso dejó vivos (Job Object), así que MariaDB y la API deben vivir en el mismo paso
+      # que las pruebas. Al final se detienen aquí mismo.
+      - name: MariaDB temporal + API real + pruebas de la app contra ella
         run: |
+          .\.github\scripts\mariadb-windows.ps1 -Port 3307
+          if (-not $?) { exit 1 }
+          Push-Location backend
           npm ci --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { exit 1 }
           node migrate.js
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          $env:RUNNER_TRACKING_ID = ''   # que el runner no la termine al acabar este paso
           $api = Start-Process -FilePath node -ArgumentList 'server.js' -RedirectStandardOutput ..\api.log -RedirectStandardError ..\api.err -WindowStyle Hidden -PassThru
-          $api.Id | Out-File -Encoding ascii ..\api.pid
+          Pop-Location
+          $ok = $false
           for ($i = 0; $i -lt 30; $i++) {
-            try { $r = Invoke-RestMethod http://127.0.0.1:3077/api/health -TimeoutSec 2; Write-Host "API lista: $($r.name) $($r.version)"; exit 0 } catch { Start-Sleep -Seconds 1 }
+            try { $r = Invoke-RestMethod http://127.0.0.1:3077/api/health -TimeoutSec 2; Write-Host "API lista: $($r.name) $($r.version)"; $ok = $true; break } catch { Start-Sleep -Seconds 1 }
           }
-          Write-Host "::error::La API no respondió en 30 s"; Get-Content ..\api.log, ..\api.err -ErrorAction SilentlyContinue; exit 1
-
-      - name: Dependencias de la app
-        run: flutter pub get
-
-      - name: Pruebas de la app contra la API real
-        shell: cmd
-        run: flutter test test/api_real_test.dart --machine --dart-define=API_URL=http://127.0.0.1:3077/api > api-results.json
+          if (-not $ok) { Write-Host "::error::La API no respondio en 30 s"; Get-Content api.log, api.err -ErrorAction SilentlyContinue; exit 1 }
+          flutter pub get
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmd /c "flutter test test/api_real_test.dart --machine --dart-define=API_URL=http://127.0.0.1:3077/api > api-results.json"
+          $code = $LASTEXITCODE
+          Stop-Process -Id $api.Id -Force -ErrorAction SilentlyContinue
+          $pidFile = "$env:RUNNER_TEMP\mariadb.pid"
+          if (Test-Path $pidFile) { Stop-Process -Id ([int](Get-Content $pidFile)) -Force -ErrorAction SilentlyContinue }
+          exit $code
 
       - name: Resumen de resultados
         if: always()
@@ -141,13 +144,6 @@ jobs:
       - name: Registro de la API
         if: always()
         run: Get-Content api.log, api.err -Tail 60 -ErrorAction SilentlyContinue
-
-      - name: Detener la API y la base de prueba
-        if: always()
-        run: |
-          foreach ($f in @('api.pid', "$env:RUNNER_TEMP\mariadb.pid")) {
-            if (Test-Path $f) { Stop-Process -Id ([int](Get-Content $f)) -Force -ErrorAction SilentlyContinue }
-          }
 
       - uses: actions/upload-artifact@v4
         if: always()
