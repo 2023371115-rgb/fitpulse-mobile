@@ -1,0 +1,142 @@
+# Prácticas 13 y 14 · Integración continua de la app móvil FitPulse (Flutter).
+#
+# Se ejecuta en cada push a cualquier rama, en cada pull request y a mano (Actions → Run workflow).
+#   1. pruebas          análisis estático + pruebas unitarias, de integración, de interfaz
+#                       y de persistencia (todo lo que está en test/), con cobertura.
+#   2. integracion-api  levanta MariaDB y el backend real (repositorio fitpulse-backend)
+#                       y prueba la app contra esa API (test/api_real_test.dart).
+# Si una prueba falla, el job falla, el commit/PR queda en rojo y la anotación indica
+# archivo, línea y mensaje de la prueba.
+name: CI app móvil
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruebas:
+    name: Análisis y pruebas de la app
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Versión de Flutter
+        run: flutter --version
+
+      - name: Dependencias
+        run: flutter pub get
+
+      - name: Análisis estático (flutter analyze)
+        run: flutter analyze --no-fatal-infos
+
+      - name: Pruebas unitarias, integración, interfaz y persistencia
+        run: flutter test --machine --coverage > test-results.json
+
+      - name: Resumen de resultados
+        if: always()
+        run: python3 .github/scripts/ci_report.py flutter test-results.json "Pruebas de la app (flutter test)"
+
+      - name: Cobertura
+        if: always()
+        run: |
+          if [ -f coverage/lcov.info ]; then
+            awk -F: '/^LF:/{t+=$2} /^LH:/{h+=$2} END{if(t) printf "Cobertura de líneas: %.1f %% (%d de %d)\n", 100*h/t, h, t}' coverage/lcov.info | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: resultados-app
+          path: |
+            test-results.json
+            coverage/lcov.info
+          if-no-files-found: ignore
+
+  integracion-api:
+    name: Integración app ↔ API real (Node + MariaDB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: "yes"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=24
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: ""
+      DB_NAME: fitpulse_ci
+      JWT_SECRET: ci-secreto-de-prueba
+      PORT: "3000"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Código del backend (fitpulse-backend)
+        uses: actions/checkout@v4
+        with:
+          repository: 2023371115-rgb/fitpulse-backend
+          ref: unidad3-nube
+          path: backend
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Instalar y arrancar la API
+        working-directory: backend
+        run: |
+          npm ci --no-audit --no-fund
+          node migrate.js
+          nohup node server.js > ../api.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3000/api/health && echo && exit 0
+            sleep 1
+          done
+          echo "::error::La API no respondió en 30 s"; cat ../api.log; exit 1
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Dependencias de la app
+        run: flutter pub get
+
+      - name: Pruebas de la app contra la API real
+        run: flutter test test/api_real_test.dart --machine --dart-define=API_URL=http://127.0.0.1:3000/api > api-results.json
+
+      - name: Resumen de resultados
+        if: always()
+        run: python3 .github/scripts/ci_report.py flutter api-results.json "Integración app ↔ API real"
+
+      - name: Registro de la API
+        if: always()
+        run: tail -n 60 api.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: resultados-integracion
+          path: |
+            api-results.json
+            api.log
+          if-no-files-found: ignore
