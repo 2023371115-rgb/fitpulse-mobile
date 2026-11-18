@@ -74,13 +74,21 @@ class FpLogo extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       mark,
       hgap(size * .32),
-      RichText(
-        text: TextSpan(
-          style: TextStyle(fontSize: ts, fontWeight: FontWeight.w800, color: FP.ink, letterSpacing: -0.6),
-          children: const [
-            TextSpan(text: 'Fit'),
-            TextSpan(text: 'Pulse', style: TextStyle(color: FP.red)),
-          ],
+      // Flexible + FittedBox: con letra grande del sistema o pantallas angostas el nombre se
+      // reduce en lugar de desbordar la fila (lo detectó la prueba de interfaz AUT-05, D-24).
+      Flexible(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: RichText(
+            text: TextSpan(
+              style: TextStyle(fontSize: ts, fontWeight: FontWeight.w800, color: FP.ink, letterSpacing: -0.6),
+              children: const [
+                TextSpan(text: 'Fit'),
+                TextSpan(text: 'Pulse', style: TextStyle(color: FP.red)),
+              ],
+            ),
+          ),
         ),
       ),
     ]);

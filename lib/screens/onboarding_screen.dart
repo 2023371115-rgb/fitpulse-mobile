@@ -68,15 +68,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               onPageChanged: (i) => setState(() => _page = i),
               itemBuilder: (_, i) {
                 final s = _slides[i];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    _Illustration(index: i, icon: s.$3, color: s.$4),
-                    gap(40),
-                    Text(s.$1, style: T.h1, textAlign: TextAlign.center),
-                    gap(12),
-                    Text(s.$2, style: T.muted.copyWith(fontSize: 16), textAlign: TextAlign.center),
-                  ]),
+                // Centrado si cabe; con poca altura (teléfono horizontal o letra grande) se
+                // desplaza en lugar de desbordar (D-24, detectado por widget_test.dart en la CI).
+                return LayoutBuilder(
+                  builder: (context, box) => SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: box.maxHeight),
+                      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        _Illustration(index: i, icon: s.$3, color: s.$4),
+                        gap(40),
+                        Text(s.$1, style: T.h1, textAlign: TextAlign.center),
+                        gap(12),
+                        Text(s.$2, style: T.muted.copyWith(fontSize: 16), textAlign: TextAlign.center),
+                      ]),
+                    ),
+                  ),
                 );
               },
             ),
