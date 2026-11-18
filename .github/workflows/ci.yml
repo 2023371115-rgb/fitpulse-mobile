@@ -73,6 +73,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true   # la cuota de artefactos de la cuenta está bloqueada (facturación)
         with:
           name: resultados-app
           path: |
@@ -143,6 +144,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true   # la cuota de artefactos de la cuenta está bloqueada (facturación)
         with:
           name: resultados-integracion
           path: |

@@ -6,8 +6,9 @@ typedef Json = Map<String, dynamic>;
 // ───────── Conversión segura de JSON ─────────
 double _d(Object? v, [double fallback = 0]) => v is num ? v.toDouble() : double.tryParse('$v') ?? fallback;
 double? _dn(Object? v) => v == null ? null : (v is num ? v.toDouble() : double.tryParse('$v'));
-int _i(Object? v, [int fallback = 0]) => v is num ? v.round() : int.tryParse('$v') ?? fallback;
-int? _in(Object? v) => v == null ? null : (v is num ? v.round() : int.tryParse('$v'));
+// MariaDB entrega las columnas DECIMAL como texto ("400.00"): int.tryParse las convertía en 0 (D-23)
+int _i(Object? v, [int fallback = 0]) => v is num ? v.round() : num.tryParse('$v')?.round() ?? fallback;
+int? _in(Object? v) => v == null ? null : (v is num ? v.round() : num.tryParse('$v')?.round());
 DateTime? _date(Object? v) => v == null ? null : DateTime.tryParse('$v')?.toLocal();
 List<double> _doubles(Object? v) => v is List ? v.whereType<num>().map((e) => e.toDouble()).toList() : <double>[];
 

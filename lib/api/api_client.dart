@@ -157,7 +157,13 @@ class ApiClient {
   }
 
   Future<dynamic> _send(String method, String path, {Object? body, Map<String, String>? query, String? idempotencyKey}) async {
-    final uri = _uri(path, query);
+    final Uri uri;
+    try {
+      uri = _uri(path, query);
+    } on FormatException {
+      // Dirección escrita a mano en "Servidor" (D-07): antes la FormatException llegaba sin convertir
+      throw ApiException('La dirección del servidor no es válida. Revísala en "Servidor".');
+    }
     final encoded = body == null ? null : jsonEncode(body);
     http.Response res;
     final sw = Stopwatch()..start();

@@ -8,13 +8,14 @@ class Fmt {
 
   /// 7240 → "7,240"
   static String number(num value) {
-    final s = value.round().abs().toString();
+    final rounded = value.round(); // el signo se decide después de redondear: -0.4 → "0" (D-09)
+    final s = rounded.abs().toString();
     final b = StringBuffer();
     for (var i = 0; i < s.length; i++) {
       if (i > 0 && (s.length - i) % 3 == 0) b.write(',');
       b.write(s[i]);
     }
-    return value < 0 ? '-$b' : b.toString();
+    return rounded < 0 ? '-$b' : b.toString();
   }
 
   static String km(double v) => v.toStringAsFixed(1);
